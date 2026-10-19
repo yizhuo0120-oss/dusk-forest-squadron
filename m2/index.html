@@ -788,23 +788,48 @@ function buildTerrainChunk() {
   // 树木 / 灌木 / 岩石（批量合并）
   {
     const parts = [];
-    for (let i = 0; i < 46; i++) {
-      const x = (Math.random() - 0.5) * 150;
-      const z = 8 + Math.random() * (D - 16);
+    // 树木：一丛一丛的森林（随机林心 + 林内散布），三种树形混种，巨树可到原树形的 200%
+    const treeAt = (x, z, s, kind) => {
       const y = heightAt(x, z);
-      if (y > 6) continue;
-      if (Math.abs(x - riverX(z)) < 10) continue;
-      const s = 1.6 + Math.random() * 2.4;
-      const trunk = shadeFaces(new THREE.CylinderGeometry(0.1 * s, 0.16 * s, 0.9 * s, 5), tTrunkDark, tTrunkLight, lightDir);
-      const m1 = new THREE.Matrix4(); m1.setPosition(x, y + 0.45 * s, z);
-      parts.push({ geo: trunk, matrix: m1 });
-      for (let c2 = 0; c2 < 2; c2++) {
-        const cs = s * (0.55 - c2 * 0.15);
-        const cg = shadeFaces(new THREE.IcosahedronGeometry(cs, 1), tTreeDark, tTreeLight, lightDir);
-        const m2 = new THREE.Matrix4();
-        m2.setPosition(x + (Math.random() - 0.5) * 0.4 * s, y + s * (0.95 + c2 * 0.35), z + (Math.random() - 0.5) * 0.4 * s);
-        parts.push({ geo: cg, matrix: m2 });
+      if (y > 6) return;
+      if (Math.abs(x - riverX(z)) < 9) return;
+      if (kind === 0) {
+        // 杉树：细杆 + 三层锥冠
+        parts.push({ geo: shadeFaces(new THREE.CylinderGeometry(0.08 * s, 0.14 * s, 1.0 * s, 5), tTrunkDark, tTrunkLight, lightDir), matrix: new THREE.Matrix4().setPosition(x, y + 0.5 * s, z) });
+        for (let k = 0; k < 3; k++) {
+          parts.push({ geo: shadeFaces(new THREE.ConeGeometry(s * (0.75 - k * 0.2), s * 0.85, 7), tTreeDark, tTreeLight, lightDir), matrix: new THREE.Matrix4().setPosition(x, y + s * (1.0 + k * 0.52), z) });
+        }
+      } else if (kind === 1) {
+        // 阔叶树：杆 + 双团冠
+        parts.push({ geo: shadeFaces(new THREE.CylinderGeometry(0.1 * s, 0.16 * s, 0.9 * s, 5), tTrunkDark, tTrunkLight, lightDir), matrix: new THREE.Matrix4().setPosition(x, y + 0.45 * s, z) });
+        for (let c2 = 0; c2 < 2; c2++) {
+          const cs = s * (0.55 - c2 * 0.15);
+          parts.push({ geo: shadeFaces(new THREE.IcosahedronGeometry(cs, 1), tTreeDark, tTreeLight, lightDir), matrix: new THREE.Matrix4().setPosition(x + (Math.random() - 0.5) * 0.4 * s, y + s * (0.95 + c2 * 0.35), z + (Math.random() - 0.5) * 0.4 * s) });
+        }
+      } else {
+        // 高树：细长杆 + 顶部大小双冠
+        parts.push({ geo: shadeFaces(new THREE.CylinderGeometry(0.09 * s, 0.18 * s, 1.6 * s, 5), tTrunkDark, tTrunkLight, lightDir), matrix: new THREE.Matrix4().setPosition(x, y + 0.8 * s, z) });
+        parts.push({ geo: shadeFaces(new THREE.IcosahedronGeometry(s * 0.62, 1), tTreeDark, tTreeLight, lightDir), matrix: new THREE.Matrix4().setPosition(x, y + 1.75 * s, z) });
+        parts.push({ geo: shadeFaces(new THREE.IcosahedronGeometry(s * 0.38, 1), tTreeDark, tTreeLight, lightDir), matrix: new THREE.Matrix4().setPosition(x + s * 0.3, y + 1.45 * s, z - s * 0.1) });
       }
+    };
+    const groveN = 11 + Math.floor(Math.random() * 4);
+    for (let g = 0; g < groveN; g++) {
+      const gx = (Math.random() - 0.5) * 150;
+      const gz = 10 + Math.random() * (D - 20);
+      const gr = 6 + Math.random() * 9;
+      const gn = 3 + Math.floor(Math.random() * 6);
+      for (let k = 0; k < gn; k++) {
+        const a = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * gr;
+        const x = gx + Math.cos(a) * rr, z = gz + Math.sin(a) * rr;
+        if (Math.abs(x) > 150) continue;
+        const s0 = 1.5 + Math.random() * 2.2;
+        const s = Math.random() < 0.14 ? s0 * 2 : s0;   // 少量巨树（最高约为旧上限的 200%）
+        treeAt(x, z, s, Math.floor(Math.random() * 3));
+      }
+    }
+    for (let i = 0; i < 5; i++) {
+      treeAt((Math.random() - 0.5) * 150, 8 + Math.random() * (D - 16), 1.5 + Math.random() * 1.8, Math.floor(Math.random() * 3));
     }
     for (let i = 0; i < 26; i++) {
       const x = (Math.random() - 0.5) * 160;
@@ -887,8 +912,8 @@ for (let i2 = 0; i2 < 5; i2++) {
 
 // ===== 航路障碍：随机小浮岛（带红色警示灯，撞上损一命）=====
 const hazardTemplates = [];
-for (let h2 = 0; h2 < 3; h2++) {
-  const hs = 3.2 + Math.random() * 1.6;
+for (let h2 = 0; h2 < 4; h2++) {
+  const hs = 1.8 + Math.random() * 1.6;   // 上限为原体型的 70%
   const tpl = buildIsland(hs);
   tpl.userData.size = hs;
   const beacon = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -1769,7 +1794,7 @@ function loop(t) {
   if (state.running && !levelOver && t > nextHazard) {
     const tpl = hazardTemplates[Math.floor(Math.random() * hazardTemplates.length)];
     const hz = tpl.clone();
-    hz.position.set((Math.random() - 0.5) * 20, 8.5 + Math.random() * 7, -(130 + Math.random() * 30));
+    hz.position.set((Math.random() - 0.5) * 36, 6 + Math.random() * 13.5, -(120 + Math.random() * 50));
     hz.scale.setScalar(0.01);
     scene.add(hz); hazards.push(hz);
     nextHazard = t + 6500 + Math.random() * 3000;
