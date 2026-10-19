@@ -370,29 +370,6 @@ const sea = new THREE.Mesh(
 sea.position.set(0, -9.55, -340);
 scene.add(sea);
 
-// ===== 远景城堡（地平线剪影）=====
-{
-  const cMat = new THREE.MeshBasicMaterial({ color: 0xaac0dc });
-  const cMat2 = new THREE.MeshBasicMaterial({ color: 0x92a8c8 });
-  const castle = new THREE.Group();
-  const hillBase = new THREE.Mesh(new THREE.ConeGeometry(30, 16, 8), new THREE.MeshBasicMaterial({ color: 0x8fb8c8 }));
-  hillBase.position.y = 8;
-  castle.add(hillBase);
-  const body = new THREE.Mesh(new THREE.BoxGeometry(16, 10, 12), cMat);
-  body.position.y = 20;
-  castle.add(body);
-  for (let t2 = 0; t2 < 3; t2++) {
-    const tower = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 14 + t2 * 4, 6), cMat2);
-    tower.position.set((t2 - 1) * 6, 24 + t2 * 2, -2 + t2 * 2);
-    castle.add(tower);
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(3, 6, 6), cMat2);
-    roof.position.set((t2 - 1) * 6, 32 + t2 * 2, -2 + t2 * 2);
-    castle.add(roof);
-  }
-  castle.position.set(4, -9, -175);
-  scene.add(castle);
-}
-
 // ===== 太阳光柱（参考图光感）=====
 for (let ri = 0; ri < 3; ri++) {
   const ray = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -411,7 +388,7 @@ for (let i = 0; i < 20; i++) {
   const puff = new THREE.Sprite(cloudPuffMat);
   const s = 18 + Math.random() * 26;
   puff.scale.set(s, s * 0.5, 1);
-  puff.position.set((Math.random() - 0.5) * 150, 6 + Math.random() * 30, -Math.random() * 200 + 10);
+  puff.position.set((Math.random() - 0.5) * 150, 6 + Math.random() * 30, -80 - Math.random() * 180);
   scene.add(puff); cloudPuffs.push(puff);
 }
 // ===== 浮空岛（程序化 3D 建模：多面体岩体 + 岩瓣 + 草毯 + 树木 + 遗迹，几何合并优化）=====
@@ -434,7 +411,7 @@ function shadeFaces(geo, cDark, cLight, lightDir) {
     A.fromBufferAttribute(pos, f); B.fromBufferAttribute(pos, f + 1); C.fromBufferAttribute(pos, f + 2);
     ab.subVectors(B, A); ac.subVectors(C, A); n.crossVectors(ab, ac).normalize();
     const lum2 = Math.max(0, n.dot(lightDir));
-    col.copy(cDark).lerp(cLight, 0.2 + lum2 * 0.8);
+    col.copy(cDark).lerp(cLight, 0.3 + lum2 * 0.6);
     for (let k = 0; k < 3; k++) {
       colors[(f + k) * 3] = col.r; colors[(f + k) * 3 + 1] = col.g; colors[(f + k) * 3 + 2] = col.b;
     }
@@ -585,20 +562,45 @@ async function setupBigIslands() {
         o.material = new THREE.MeshBasicMaterial({ vertexColors: true });
       }
     });
+    const GLB_BANDS = [
+      { z0: 72,  z1: 108, s0: 1.00, s1: 1.28, x0: 26, x1: 42 },
+      { z0: 118, z1: 165, s0: 1.30, s1: 1.68, x0: 30, x1: 54 },
+      { z0: 172, z1: 240, s0: 1.75, s1: 2.30, x0: 38, x1: 72 }
+    ];
     for (let i2 = 0; i2 < 3; i2++) {
+      const band = GLB_BANDS[i2];
       const inst = template.clone();
-      const sc = 1.5 + Math.random() * 0.9;
+      const zPos = -(band.z0 + Math.random() * (band.z1 - band.z0));
+      const sc = band.s0 + Math.random() * (band.s1 - band.s0);
       inst.scale.setScalar(sc);
       inst.rotation.y = Math.random() * Math.PI * 2;
-      inst.position.set((i2 % 2 === 0 ? -1 : 1) * (30 + Math.random() * 16), 12 + Math.random() * 8, -90 - Math.random() * 80);
+      const yUp = i2 % 2 === 1;
+      inst.position.set(
+        (yUp ? 1 : (Math.random() < 0.5 ? -1 : 1)) * (band.x0 + Math.random() * (band.x1 - band.x0)),
+        7.8 * sc + 2.5 + (yUp ? 12 + Math.random() * 14 : Math.random() * 7),
+        zPos
+      );
       inst.userData.phase = Math.random() * 6;
       scene.add(inst); islands.push(inst);
     }
   } catch (e) {
     // 回退：程序化大岛
+    const FB_BANDS = [
+      { z0: 72, z1: 108, s0: 6, s1: 8, x0: 26, x1: 42 },
+      { z0: 118, z1: 165, s0: 8, s1: 10, x0: 30, x1: 54 },
+      { z0: 172, z1: 240, s0: 10, s1: 13, x0: 38, x1: 72 }
+    ];
     for (let i2 = 0; i2 < 3; i2++) {
-      const g = buildIsland(13 + Math.random() * 5);
-      g.position.set((i2 % 2 === 0 ? -1 : 1) * (30 + Math.random() * 16), 12 + Math.random() * 8, -90 - Math.random() * 80);
+      const band = FB_BANDS[i2];
+      const zPos = -(band.z0 + Math.random() * (band.z1 - band.z0));
+      const S = band.s0 + Math.random() * (band.s1 - band.s0);
+      const g = buildIsland(S);
+      const yUp = i2 % 2 === 1;
+      g.position.set(
+        (Math.random() < 0.5 ? -1 : 1) * (band.x0 + Math.random() * (band.x1 - band.x0)),
+        S + 2.5 + (yUp ? 12 + Math.random() * 14 : Math.random() * 7),
+        zPos
+      );
       g.userData.phase = Math.random() * 6;
       scene.add(g); islands.push(g);
     }
@@ -638,7 +640,7 @@ function heightAt(x, z) {
 function colorAt(x, z, y, slope) {
   const c = new THREE.Color();
   const n = (Math.sin(x * 0.11 + z * 0.07) * Math.cos(z * 0.05 + 1.3) + 1) / 2;
-  c.copy(grassA).lerp(grassB, n).lerp(grassC, Math.random() * 0.25);
+  c.copy(grassA).lerp(grassB, n).lerp(grassC, Math.random() * 0.12);
   if (slope > 0.5) c.lerp(rockC, Math.min(1, (slope - 0.5) * 2.4));
   if (y > 11) c.lerp(rockC, Math.min(1, (y - 11) / 12));
   if (y > 24) c.lerp(snowC, Math.min(1, (y - 24) / 9));
@@ -651,12 +653,9 @@ const terrainChunks = [];
 function buildTerrainChunk() {
   const W = 320, D = TERRAIN_PERIOD;
   const SEG_X = 96, SEG_Z = 60;
-  const posArr = [], colArr = [];
+  const posArr = [], colArr = [], idxArr = [];
   const lightDir = new THREE.Vector3(-0.4, 0.85, 0.35).normalize();
-  const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3();
-  const ab = new THREE.Vector3(), ac = new THREE.Vector3(), nrm = new THREE.Vector3();
-  const colF = new THREE.Color();
-  const vx = [], vy = [], vz = [], vc = [];
+  const nrmV = new THREE.Vector3();
   for (let iz = 0; iz <= SEG_Z; iz++) {
     for (let ix = 0; ix <= SEG_X; ix++) {
       const x = (ix / SEG_X - 0.5) * W;
@@ -666,32 +665,26 @@ function buildTerrainChunk() {
       const gx = (heightAt(x + e, z) - heightAt(x - e, z)) / (2 * e);
       const gz = (heightAt(x, z + e) - heightAt(x, z - e)) / (2 * e);
       const slope = Math.sqrt(gx * gx + gz * gz);
-      vx.push(x); vy.push(y); vz.push(z);
-      vc.push(colorAt(x, z, y, slope));
+      // 解析法线 + 逐顶点平滑着色（按位置计算，跨地块接缝天然连续）
+      nrmV.set(-gx, 1, -gz).normalize();
+      const lum = Math.max(0, nrmV.dot(lightDir));
+      const shade = 0.78 + lum * 0.34;
+      const c = colorAt(x, z, y, slope).multiplyScalar(shade);
+      posArr.push(x, y, z);
+      colArr.push(c.r, c.g, c.b);
     }
   }
   const VID = (ix, iz) => iz * (SEG_X + 1) + ix;
-  const pushTri = (i0, i1, i2) => {
-    A.set(vx[i0], vy[i0], vz[i0]); B.set(vx[i1], vy[i1], vz[i1]); C.set(vx[i2], vy[i2], vz[i2]);
-    ab.subVectors(B, A); ac.subVectors(C, A); nrm.crossVectors(ab, ac).normalize();
-    const lum = Math.max(0, nrm.dot(lightDir));
-    const shade = 0.72 + lum * 0.46;
-    colF.copy(vc[i0]).add(vc[i1]).add(vc[i2]).multiplyScalar(1 / 3).multiplyScalar(shade);
-    for (const ii of [i0, i1, i2]) {
-      posArr.push(vx[ii], vy[ii], vz[ii]);
-      colArr.push(colF.r, colF.g, colF.b);
-    }
-  };
   for (let iz = 0; iz < SEG_Z; iz++) {
     for (let ix = 0; ix < SEG_X; ix++) {
       const a = VID(ix, iz), b = VID(ix + 1, iz), c = VID(ix, iz + 1), d = VID(ix + 1, iz + 1);
-      pushTri(a, c, b);
-      pushTri(b, c, d);
+      idxArr.push(a, c, b, b, c, d);
     }
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colArr, 3));
+  geo.setIndex(idxArr);
   const chunk = new THREE.Group();
   chunk.add(new THREE.Mesh(geo, terrainMat));
 
@@ -794,24 +787,54 @@ function buildTerrainChunk() {
   return chunk;
 }
 
-// 两块地形交替滚动的无限地面
-const chunkA = buildTerrainChunk();
-chunkA.position.z = 60;
-scene.add(chunkA); terrainChunks.push(chunkA);
-const chunkB = buildTerrainChunk();
-chunkB.position.z = -140;
-scene.add(chunkB); terrainChunks.push(chunkB);
+// 三块地形首尾相接的无限地面（前方覆盖始终超过雾距）
+for (let tc = 0; tc < 3; tc++) {
+  const ch = buildTerrainChunk();
+  ch.position.z = -tc * TERRAIN_PERIOD;
+  scene.add(ch); terrainChunks.push(ch);
+}
 
 
-for (let i2 = 0; i2 < 3; i2++) {
-  const g = buildIsland(8 + Math.random() * 3);
-  g.position.set((i2 % 2 === 0 ? -1 : 1) * (20 + Math.random() * 12), 4 + Math.random() * 6, -50 - Math.random() * 70);
+const MID_BANDS = [
+  { z0: 30,  z1: 55,  s0: 3.6, s1: 4.8,  x0: 15, x1: 24 },
+  { z0: 65,  z1: 110, s0: 6.0, s1: 8.0,  x0: 20, x1: 38 },
+  { z0: 115, z1: 175, s0: 8.0, s1: 10.5, x0: 26, x1: 50 },
+  { z0: 180, z1: 245, s0: 10,  s1: 13,   x0: 34, x1: 68 }
+];
+for (let i2 = 0; i2 < 4; i2++) {
+  const band = MID_BANDS[i2];
+  const zPos = -(band.z0 + Math.random() * (band.z1 - band.z0));
+  const S = band.s0 + Math.random() * (band.s1 - band.s0);
+  const g = buildIsland(S);
+  const yUp = i2 % 2 === 1;
+  const side = yUp ? 1 : (Math.random() < 0.5 ? -1 : 1);
+  g.position.set(
+    side * (band.x0 + Math.random() * (band.x1 - band.x0)),
+    S + 2.5 + (yUp ? 12 + Math.random() * 14 : Math.random() * 8),
+    zPos
+  );
   g.userData.phase = Math.random() * 6;
   scene.add(g); islands.push(g);
 }
-for (let i2 = 0; i2 < 4; i2++) {
-  const g = buildIsland(4.5 + Math.random() * 2);
-  g.position.set((i2 % 2 === 0 ? -1 : 1) * (15 + Math.random() * 9), -1 + Math.random() * 7, -25 - Math.random() * 55);
+const SMALL_BANDS = [
+  { z0: 32,  z1: 48,  s0: 2.0, s1: 2.6, x0: 13, x1: 19 },
+  { z0: 40,  z1: 70,  s0: 3.0, s1: 4.2, x0: 16, x1: 28 },
+  { z0: 75,  z1: 120, s0: 4.0, s1: 5.5, x0: 20, x1: 36 },
+  { z0: 125, z1: 185, s0: 5.0, s1: 7.0, x0: 26, x1: 46 },
+  { z0: 190, z1: 250, s0: 6.0, s1: 8.0, x0: 32, x1: 60 }
+];
+for (let i2 = 0; i2 < 5; i2++) {
+  const band = SMALL_BANDS[i2];
+  const zPos = -(band.z0 + Math.random() * (band.z1 - band.z0));
+  const S = band.s0 + Math.random() * (band.s1 - band.s0);
+  const g = buildIsland(S);
+  const yUp = i2 % 2 === 1;
+  const side = yUp ? 1 : (Math.random() < 0.5 ? -1 : 1);
+  g.position.set(
+    side * (band.x0 + Math.random() * (band.x1 - band.x0)),
+    S + 2 + (yUp ? 16 + Math.random() * 14 : Math.random() * 9),
+    zPos
+  );
   g.userData.phase = Math.random() * 6;
   scene.add(g); islands.push(g);
 }
@@ -833,13 +856,6 @@ for (let h2 = 0; h2 < 3; h2++) {
 const hazards = [];
 let nextHazard = 0;
 
-// 远景拱门（光遇式遗迹）
-const archMat = new THREE.MeshBasicMaterial({ color: 0xc8d2e8 });
-for (let i = 0; i < 2; i++) {
-  const arch = new THREE.Mesh(new THREE.TorusGeometry(7 + i * 2, 0.5, 8, 24, Math.PI), archMat);
-  arch.position.set((i % 2 === 0 ? -1 : 1) * 30, -1, -120 - i * 40);
-  scene.add(arch);
-}
 // 光鳐（远处剪影，缓慢振翅）
 const mantas = [];
 for (let i = 0; i < 3; i++) {
@@ -937,15 +953,19 @@ function buildCumulus(csize) {
   return new THREE.Mesh(mergeColored(parts), cumulusMat);
 }
 const clouds = [];
-for (let i = 0; i < 9; i++) {
-  const cl = buildCumulus(10 + Math.random() * 13);
-  cl.position.set((Math.random() - 0.5) * 180, 10 + Math.random() * 26, -70 - Math.random() * 120);
+function addCloud(csize, x, y, z) {
+  const cl = buildCumulus(csize);
+  cl.position.set(x, y, z);
+  cl.material = cumulusMat.clone();
+  cl.material.transparent = true;
+  cl.userData.spd = 0.18 + 0.16 * (1 + z / 200);
   scene.add(cl); clouds.push(cl);
 }
+for (let i = 0; i < 7; i++) {
+  addCloud(8 + Math.random() * 6, (Math.random() - 0.5) * 180, 18 + Math.random() * 20, -110 - Math.random() * 150);
+}
 for (const side of [-1, 1]) {
-  const cl = buildCumulus(20 + Math.random() * 8);
-  cl.position.set(side * (58 + Math.random() * 26), 7 + Math.random() * 6, -105 - Math.random() * 45);
-  scene.add(cl); clouds.push(cl);
+  addCloud(14 + Math.random() * 6, side * (58 + Math.random() * 26), 16 + Math.random() * 10, -120 - Math.random() * 140);
 }
 // ===== 玩家：细节化战机（机身+座舱+后掠翼+平尾+垂尾+双引擎尾焰）=====
 const plane = new THREE.Group();
@@ -1099,7 +1119,8 @@ function spawnEnemy(forceType) {
   m.add(core);
   m.add(new THREE.Mesh(enemyWireGeo, enemyWireMat));
   if (spec.shield) m.add(new THREE.Mesh(shieldGeo, shieldMat));
-  m.position.set((Math.random() - 0.5) * 18, 12 + (Math.random() - 0.5) * 7, -70);
+  m.position.set((Math.random() - 0.5) * 18, 12 + (Math.random() - 0.5) * 7, -(95 + Math.random() * 25));
+  m.scale.setScalar(spec.size * 0.35);
   m.userData = {
     type: typeKey, hp: spec.hp, baseX: m.position.x, phase: Math.random() * Math.PI * 2,
     zig: spec.zig || 0, pulse: !!spec.pulse, boss: !!spec.boss, spec
@@ -1536,13 +1557,13 @@ function loop(t) {
     // 云海贴片后移
     for (let ci = 0; ci < cloudPuffs.length; ci++) {
       cloudPuffs[ci].position.z += 12 * throttle * dt * 0.25;
-      if (cloudPuffs[ci].position.z > 14) cloudPuffs[ci].position.z -= 190;
+      if (cloudPuffs[ci].position.z > -70) cloudPuffs[ci].position.z -= 190;
     }
     // 浮岛轻浮 + 后移
     for (let ii = 0; ii < islands.length; ii++) {
       islands[ii].position.y += Math.sin(t * 0.0008 + ii) * 0.25 * dt;
       islands[ii].position.z += 12 * throttle * dt * 0.35;
-      if (islands[ii].position.z > 16) islands[ii].position.z -= 185;
+      if (islands[ii].position.z > 16) islands[ii].position.z -= 260;
     }
     // 光鳐振翅滑翔
     for (const mm of mantas) {
@@ -1558,9 +1579,13 @@ function loop(t) {
         bird.scale.y = 0.12 + Math.abs(Math.sin(t * 0.006 + bird.userData.phase)) * 0.45;
       }
     }
-    // 云团缓慢漂移
+    // 云团：随风缓漂 + 随飞行后退；接近镜头前淡出，避免糊满画面
     for (let ci = 0; ci < clouds.length; ci++) {
-      clouds[ci].position.x += Math.sin(t * 0.0002 + ci) * 0.8 * dt;
+      const cl = clouds[ci];
+      cl.position.x += Math.sin(t * 0.0002 + ci) * 0.8 * dt;
+      cl.position.z += 12 * throttle * dt * cl.userData.spd;
+      cl.material.opacity = Math.min(1, Math.max(0, (-cl.position.z - 95) / 25));
+      if (cl.position.z > -92) cl.position.z -= 175;
     }
 
     const worldSpeed = 12 * throttle;
@@ -1590,11 +1615,12 @@ function loop(t) {
   // 无限地形滚动：两块地交替后移并回卷
   for (const chun of terrainChunks) {
     chun.position.z += worldSpeed * dt;
-    if (chun.position.z > 120) chun.position.z -= 400;
+    if (chun.position.z > 12) chun.position.z -= TERRAIN_PERIOD * 3;
   }
   for (const e of [...enemies]) {
     const ud = e.userData;
-    e.position.z += worldSpeed * dt * ud.spec.speed;
+    e.position.z += worldSpeed * dt * ud.spec.speed * 1.45;
+    if (e.scale.x < ud.spec.size) e.scale.setScalar(Math.min(ud.spec.size, e.scale.x + dt * ud.spec.size * 1.5));
     if (ud.zig) e.position.x = ud.baseX + Math.sin(t * 0.0025 + ud.phase) * ud.zig;
     if (ud.pulse) e.position.z += Math.sin(t * 0.004 + ud.phase) * 8 * dt;
     e.rotation.x += dt * 0.8; e.rotation.y += dt * 0.7;
@@ -1609,12 +1635,14 @@ function loop(t) {
   if (state.running && !levelOver && t > nextHazard) {
     const tpl = hazardTemplates[Math.floor(Math.random() * hazardTemplates.length)];
     const hz = tpl.clone();
-    hz.position.set((Math.random() - 0.5) * 20, 8.5 + Math.random() * 7, -78);
+    hz.position.set((Math.random() - 0.5) * 20, 8.5 + Math.random() * 7, -(130 + Math.random() * 30));
+    hz.scale.setScalar(0.01);
     scene.add(hz); hazards.push(hz);
     nextHazard = t + 6500 + Math.random() * 3000;
   }
   for (const hz of [...hazards]) {
-    hz.position.z += (12 * throttle * 0.9 + 5) * dt;   // 略快于世界漂移，逼近感更强
+    hz.position.z += (12 * throttle * 0.9 + 5) * 1.5 * dt;   // 远处生成、略提速，抵达节奏不变
+    hz.scale.setScalar(Math.min(1, hz.scale.x + dt * 0.9));
     hz.rotation.y += dt * 0.15;
     for (const ch of hz.children) {
       if (ch.isSprite) ch.material.opacity = 0.45 + Math.sin(t * 0.008) * 0.35;
