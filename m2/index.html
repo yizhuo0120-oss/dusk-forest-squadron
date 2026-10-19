@@ -19,33 +19,74 @@
     background: radial-gradient(ellipse at 50% 42%, transparent 58%, rgba(80, 70, 125, 0.36) 100%);
   }
 
-  #hud {
-    position: fixed; top: 12px; left: 16px; z-index: 10;
-    font-size: 13px; line-height: 1.75;
-    text-shadow: 0 1px 4px rgba(30, 30, 60, 0.85);
-    background: rgba(255, 250, 245, 0.07);
-    border: 1px solid rgba(255, 250, 245, 0.14);
-    border-radius: 14px;
-    padding: 10px 16px;
-    backdrop-filter: blur(6px);
+  /* ===== 顶部中央：得分 + 关卡 ===== */
+  #topHud {
+    position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10;
+    text-align: center; pointer-events: none;
+    text-shadow: 0 1px 5px rgba(20, 24, 52, 0.8);
   }
-  #hud .val { color: #ffddaa; }
-  #wstate { font-size: 17px; font-weight: 700; color: #a8e4ff; letter-spacing: 1px; }
-  #wstate.fire { color: #ffd0a0; }
-  #lockTrack { width: 170px; height: 7px; background: rgba(30,30,60,0.4); margin-top: 4px; display: none; border-radius: 4px; overflow: hidden; }
-  #lockFill { display: block; height: 100%; width: 0%; background: linear-gradient(90deg,#ffd0a0,#ff9a8a); }
+  #topHud .th-score {
+    display: flex; align-items: baseline; justify-content: center; gap: 14px;
+    font-size: 14px; color: #f4e6c8; letter-spacing: 3px;
+  }
+  #topHud .th-score b {
+    font-size: 30px; color: #ffe9b0; letter-spacing: 1px; line-height: 1;
+    text-shadow: 0 0 18px rgba(255, 220, 150, 0.45), 0 2px 5px rgba(20, 24, 52, 0.7);
+  }
+  #topHud .hearts { font-size: 14px; color: #ff8d7a; letter-spacing: 3px; }
+  #topHud .th-sub {
+    margin-top: 4px; font-size: 12px; color: #ece6d6; letter-spacing: 2px;
+    display: flex; justify-content: center; gap: 10px; opacity: 0.95;
+  }
+  #topHud .th-sub i { font-style: normal; opacity: 0.4; }
+  #topHud .th-sub .val { color: #ffddaa; font-weight: 700; }
+  #topHud .th-sub #levelName { color: #ffe4b8; font-weight: 700; }
+  #topHud .th-kill {
+    margin: 7px auto 0; width: 210px; height: 4px; border-radius: 3px;
+    background: rgba(20, 26, 52, 0.35); overflow: hidden;
+  }
+  #topHud .th-kill i { display: block; height: 100%; width: 0%; border-radius: 3px;
+    background: linear-gradient(90deg, #ffd98a, #ffb35c); transition: width 0.3s; }
 
-  #levelBar {
-    position: fixed; top: 14px; right: 18px; z-index: 10; text-align: right;
-    font-size: 13px; line-height: 1.7;
-    text-shadow: 0 1px 4px rgba(30, 30, 60, 0.85);
-    background: rgba(255, 250, 245, 0.07);
-    border: 1px solid rgba(255, 250, 245, 0.14);
-    border-radius: 14px;
-    padding: 10px 16px;
-    backdrop-filter: blur(6px);
+  /* ===== 底部中央：技能进度 ===== */
+  #skillHud {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 10;
+    text-align: center; pointer-events: none;
+    text-shadow: 0 1px 5px rgba(20, 24, 52, 0.8);
   }
-  #levelName { font-size: 17px; font-weight: 700; color: #ffe4b8; letter-spacing: 2px; }
+  #wstate { font-size: 15px; font-weight: 700; color: #cfe6ff; letter-spacing: 2px; }
+  #wstate.fire { color: #ffd0a0; }
+  #skillHud .sk-track {
+    width: 300px; height: 7px; margin: 6px auto 0; border-radius: 4px;
+    background: rgba(20, 26, 52, 0.4); border: 1px solid rgba(255, 244, 220, 0.18);
+    overflow: hidden; display: none;
+  }
+  #skillHud .sk-track i { display: block; height: 100%; width: 0%; border-radius: 4px; }
+  #lockFill { background: linear-gradient(90deg, #ffd0a0, #ff8d7a); }
+  #ultFill { background: linear-gradient(90deg, #ffe9b0, #ffb35c);
+    box-shadow: 0 0 12px rgba(255, 210, 130, 0.65); transition: width 0.25s; }
+  #ultLabel { margin-top: 5px; font-size: 11px; color: #f0e6d0; letter-spacing: 3px; opacity: 0.92; }
+
+  /* ===== 底部右侧：武器弹药 ===== */
+  #ammoHud {
+    position: fixed; right: 18px; bottom: 16px; z-index: 10; pointer-events: none;
+    display: flex; gap: 8px;
+  }
+  #ammoHud .chip {
+    display: flex; align-items: center; gap: 7px;
+    background: rgba(20, 26, 52, 0.32); border: 1px solid rgba(255, 244, 220, 0.2);
+    border-radius: 999px; padding: 7px 14px; font-size: 13px;
+    text-shadow: 0 1px 4px rgba(20, 24, 52, 0.8); backdrop-filter: blur(4px);
+  }
+  #ammoHud .chip .ic { font-size: 14px; }
+  #ammoHud .chip .val { color: #ffddaa; font-weight: 700; }
+
+  /* ===== 底部左侧：操作室 ===== */
+  #cockpitHud { position: fixed; left: 14px; bottom: 14px; z-index: 10; pointer-events: none; }
+  #cockpitHud .cp-label {
+    margin-bottom: 5px; font-size: 10px; color: #ece6d6; letter-spacing: 4px;
+    text-shadow: 0 1px 4px rgba(20, 24, 52, 0.85); opacity: 0.9;
+  }
 
   /* 关卡横幅 */
   #banner {
@@ -59,16 +100,15 @@
   #banner .b-sub { font-size: 13px; color: #c9b89a; letter-spacing: 3px; margin-top: 10px; }
 
   #bossBar {
-    position: fixed; left: 50%; top: 12px; transform: translateX(-50%);
+    position: fixed; left: 50%; top: 86px; transform: translateX(-50%);
     width: 320px; z-index: 10; display: none;
   }
   #bossBar .bb-label { text-align: center; font-size: 12px; color: #ff9d7a; letter-spacing: 4px; margin-bottom: 4px; text-shadow: 0 1px 3px #000; }
   #bossBar .bb-track { height: 10px; background: #1a1210; border: 1px solid #5a3a2a; border-radius: 5px; overflow: hidden; }
   #bossFill { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #ff6b3d, #ff3d2e); transition: width 0.15s; }
 
-  #tip { color: #fff2e0; font-size: 11px; margin-top: 8px; max-width: 560px; background: rgba(48, 38, 68, 0.45); border-radius: 8px; padding: 6px 10px; line-height: 1.8; }
 
-  #pip { position: fixed; left: 14px; bottom: 14px; width: 220px; z-index: 10; border: 1px solid #3a3228; border-radius: 6px; opacity: 0.9; }
+  #pip { display: block; width: 210px; border: 1px solid rgba(255, 244, 220, 0.25); border-radius: 10px; opacity: 0.92; }
 
   #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .5s; z-index: 20; }
 
@@ -118,23 +158,26 @@
 </script>
 
 <div id="vignette"></div>
-<div id="hud">
-  <div>得分 <b id="score" class="val">0</b></div>
-  <div>速度 <b id="spd" class="val">--</b></div>
-  <div>FPS <b id="fps" class="val">--</b></div>
-  <div>机枪 <span class="val">∞</span></div>
-  <div>火箭 <b id="rkAmmo" class="val">10/10</b></div>
-  <div>导弹备弹 <b id="msAmmo" class="val">4/4</b></div>
-  <div>生命 <b id="lives" class="val">♥♥♥</b></div>
-  <div>大招 <b id="ultCharge" class="val">0/100</b></div>
-  <div id="wstate">空仓挂机</div>
-  <div id="lockTrack"><i id="lockFill"></i></div>
-  <div id="tip">左手=驾驶（移动+倾斜+油门档） ｜ 右手移动=弹道轨迹线瞄准 ｜ 张掌=保险 ｜ 点赞=机枪 手枪=火箭弹 比耶=导弹 爱你=火力全开（需100分）</div>
+<div id="flash"></div>
+<div id="topHud">
+  <div class="th-score"><span>得 分</span><b id="score">0</b><span id="lives" class="hearts">♥♥♥</span></div>
+  <div class="th-sub"><span id="levelName">1 · 萤火谷</span><i>·</i><span>击杀 <b id="levelKill" class="val">0/8</b></span><i>·</i><span id="dayPhase" class="val">白昼</span></div>
+  <div class="th-kill"><i id="killFill"></i></div>
 </div>
-<div id="levelBar">
-  <div id="levelName">萤火谷</div>
-  <div>击杀 <b id="levelKill" class="val">0/8</b></div>
-  <div>天色 <b id="dayPhase" class="val">黄昏</b></div>
+<div id="skillHud">
+  <div id="wstate">空仓静默</div>
+  <div class="sk-track" id="lockTrack"><i id="lockFill"></i></div>
+  <div class="sk-track" id="ultTrack"><i id="ultFill"></i></div>
+  <div id="ultLabel">火力全开 充能 0/100</div>
+</div>
+<div id="ammoHud">
+  <div class="chip"><span class="ic">🔫</span><span>机枪</span><b class="val">∞</b></div>
+  <div class="chip"><span class="ic">🚀</span><span>火箭</span><b id="rkAmmo" class="val">10/10</b></div>
+  <div class="chip"><span class="ic">🎯</span><span>导弹</span><b id="msAmmo" class="val">4/4</b></div>
+</div>
+<div id="cockpitHud">
+  <canvas id="pip"></canvas>
+  <div class="cp-label">操 作 室 · 左手驾驶 / 右手瞄准</div>
 </div>
 <div id="banner">
   <div class="b-level" id="bLayer">第一关</div>
@@ -145,7 +188,6 @@
   <div class="bb-label">血 月 巨 像</div>
   <div class="bb-track"><i id="bossFill"></i></div>
 </div>
-<canvas id="pip"></canvas>
 <div id="gameover">
   <div class="go-title">旅 程 结 束</div>
   <div class="go-score">得分 <b id="goScore">0</b> ｜ 击杀 <b id="goKills">0</b></div>
@@ -573,6 +615,7 @@ async function setupBigIslands() {
       const zPos = -(band.z0 + Math.random() * (band.z1 - band.z0));
       const sc = band.s0 + Math.random() * (band.s1 - band.s0);
       inst.scale.setScalar(sc);
+      inst.userData.r = 5.4 * sc;
       inst.rotation.y = Math.random() * Math.PI * 2;
       const yUp = i2 % 2 === 1;
       inst.position.set(
@@ -595,6 +638,7 @@ async function setupBigIslands() {
       const zPos = -(band.z0 + Math.random() * (band.z1 - band.z0));
       const S = band.s0 + Math.random() * (band.s1 - band.s0);
       const g = buildIsland(S);
+      g.userData.r = 1.2 * S;
       const yUp = i2 % 2 === 1;
       g.position.set(
         (Math.random() < 0.5 ? -1 : 1) * (band.x0 + Math.random() * (band.x1 - band.x0)),
@@ -806,6 +850,8 @@ for (let i2 = 0; i2 < 4; i2++) {
   const zPos = -(band.z0 + Math.random() * (band.z1 - band.z0));
   const S = band.s0 + Math.random() * (band.s1 - band.s0);
   const g = buildIsland(S);
+  g.userData.r = 1.2 * S;
+  g.userData.r = 1.2 * S;
   const yUp = i2 % 2 === 1;
   const side = yUp ? 1 : (Math.random() < 0.5 ? -1 : 1);
   g.position.set(
@@ -967,60 +1013,118 @@ for (let i = 0; i < 7; i++) {
 for (const side of [-1, 1]) {
   addCloud(14 + Math.random() * 6, side * (58 + Math.random() * 26), 16 + Math.random() * 10, -120 - Math.random() * 140);
 }
-// ===== 玩家：细节化战机（机身+座舱+后掠翼+平尾+垂尾+双引擎尾焰）=====
+// ===== 玩家：魔法战机（希卡之眼 · 程序化建模）=====
 const plane = new THREE.Group();
+const magicCores = [], magicStones = [], magicFlames = [];
 {
-  const bodyMat = new THREE.MeshBasicMaterial({ color: 0xf2e8d8 });    // 暖白机身
-  const bellyMat = new THREE.MeshBasicMaterial({ color: 0xb0977a });   // 暗部
-  const accentMat = new THREE.MeshBasicMaterial({ color: 0x35b8d8 });  // 青蓝饰条
-  const canopyMat = new THREE.MeshBasicMaterial({ color: 0x16283a });  // 深色座舱盖
+  const C = {
+    cream: [new THREE.Color(0xcfc3a4), new THREE.Color(0xf5efdc)],
+    ivory: [new THREE.Color(0xe4dcc0), new THREE.Color(0xfbf7ec)],
+    bronze: [new THREE.Color(0x7a5a2e), new THREE.Color(0xc09554)],
+    gold: [new THREE.Color(0xa8853f), new THREE.Color(0xe8c47c)],
+    teal: [new THREE.Color(0x2a8a98), new THREE.Color(0x66d4de)],
+    grey: [new THREE.Color(0x5c636e), new THREE.Color(0xa8aeb8)],
+    navy: [new THREE.Color(0x1c2840), new THREE.Color(0x3c4f74)],
+    stone: [new THREE.Color(0x6a707c), new THREE.Color(0xb0b8c4)]
+  };
+  const mfLD = new THREE.Vector3(-0.4, 0.85, 0.35).normalize();
+  const vcMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+  const glowCyan = new THREE.MeshBasicMaterial({ color: 0xaef6ff });
+  const glowCyanMid = new THREE.MeshBasicMaterial({ color: 0x58d8e8 });
+  const put = (px, py, pz, rx, ry, rz, sx, sy, sz) => {
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rx || 0, ry || 0, rz || 0));
+    m.compose(new THREE.Vector3(px || 0, py || 0, pz || 0), q, new THREE.Vector3(sx || 1, sy || 1, sz || 1));
+    return m;
+  };
+  const shaded = (geo, key) => shadeFaces(geo, C[key][0], C[key][1], mfLD);
 
-  const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.38, 2.6, 6), bodyMat);
-  fuselage.rotation.x = Math.PI / 2;
-  plane.add(fuselage);
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.32, 1.2, 6).rotateX(-Math.PI / 2), bodyMat);
-  nose.position.z = -1.9;
-  plane.add(nose);
-  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.8, 6).rotateX(Math.PI / 2), bellyMat);
-  tail.position.z = 1.6;
-  plane.add(tail);
-  const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), canopyMat);
-  canopy.scale.set(0.75, 0.6, 1.6);
-  canopy.position.set(0, 0.22, -0.75);
-  plane.add(canopy);
-  const wingGeo = new THREE.BoxGeometry(2.0, 0.07, 0.7);
-  for (const s of [-1, 1]) {
-    const w = new THREE.Mesh(wingGeo, bodyMat);
-    w.position.set(s * 1.05, -0.02, 0.35);
-    w.rotation.y = s * -0.45;
-    w.rotation.z = s * 0.06;
-    plane.add(w);
-    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.3), accentMat);
-    tip.position.set(s * 2.0, 0.02, 0.6);
-    plane.add(tip);
-    const stab = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.05, 0.34), bellyMat);
-    stab.position.set(s * 0.42, 0.02, 1.45);
-    stab.rotation.y = s * -0.4;
-    plane.add(stab);
-    const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.3, 8).rotateX(Math.PI / 2), bellyMat);
-    nozzle.position.set(s * 0.22, 0, 1.75);
-    plane.add(nozzle);
-    const flame = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: glowTex, color: 0xffd27a, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.9, depthWrite: false
-    }));
-    flame.scale.set(0.9, 0.9, 1);
-    flame.position.set(s * 0.22, 0, 2.1);
-    plane.add(flame);
+  const parts = [];
+  // 机身 + 机鼻青铜整流罩（第三只眼的底座）
+  parts.push({ geo: shaded(new THREE.CylinderGeometry(0.30, 0.45, 3.4, 10).rotateX(Math.PI / 2), 'cream'), matrix: put(0, 0, 0.3) });
+  parts.push({ geo: shaded(new THREE.ConeGeometry(0.45, 1.1, 10).rotateX(-Math.PI / 2), 'cream'), matrix: put(0, 0, -1.95) });
+  parts.push({ geo: shaded(new THREE.CylinderGeometry(0.42, 0.35, 0.5, 10).rotateX(Math.PI / 2), 'bronze'), matrix: put(0, 0, -1.62) });
+  parts.push({ geo: shaded(new THREE.TorusGeometry(0.21, 0.045, 8, 20), 'gold'), matrix: put(0, 0.02, -1.9) });
+  plane.add(new THREE.Mesh(mergeColored(parts), vcMat));
+  const eyeOrb = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10), glowCyan);
+  eyeOrb.position.set(0, 0.02, -1.9);
+  plane.add(eyeOrb);
+  // 机背发光脊线
+  const spine = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.045, 2.3), glowCyanMid);
+  spine.position.set(0, 0.43, 0.85);
+  plane.add(spine);
+  // 座舱 + 两道金色整流环 + 尾组 + 翼刀
+  parts.length = 0;
+  parts.push({ geo: shaded(new THREE.SphereGeometry(0.36, 14, 10), 'teal'), matrix: put(0, 0.3, -0.55, 0, 0, 0, 0.85, 0.6, 1.6) });
+  parts.push({ geo: shaded(new THREE.TorusGeometry(0.52, 0.05, 10, 26), 'gold'), matrix: put(0, 0, -0.15) });
+  parts.push({ geo: shaded(new THREE.TorusGeometry(0.44, 0.05, 10, 26), 'gold'), matrix: put(0, 0.02, 1.3) });
+  parts.push({ geo: shaded(new THREE.BoxGeometry(0.06, 0.8, 0.55), 'grey'), matrix: put(0, 0.45, 2.2, -0.28) });
+  parts.push({ geo: shaded(new THREE.BoxGeometry(0.85, 0.06, 0.42), 'cream'), matrix: put(0.48, 0.05, 2.3, 0, -0.35) });
+  parts.push({ geo: shaded(new THREE.BoxGeometry(0.85, 0.06, 0.42), 'cream'), matrix: put(-0.48, 0.05, 2.3, 0, 0.35) });
+  parts.push({ geo: shaded(new THREE.ConeGeometry(0.05, 0.6, 6).rotateX(Math.PI / 2), 'gold'), matrix: put(0, 0.02, 3.0) });
+  parts.push({ geo: shaded(new THREE.BoxGeometry(0.05, 0.2, 0.5), 'navy'), matrix: put(0.33, 0.1, -1.15, 0, 0, -0.18) });
+  parts.push({ geo: shaded(new THREE.BoxGeometry(0.05, 0.2, 0.5), 'navy'), matrix: put(-0.33, 0.1, -1.15, 0, 0, 0.18) });
+  plane.add(new THREE.Mesh(mergeColored(parts), vcMat));
+
+  // 双翼（鸟翼式：上反角 + 掠翼 + 鎏金翼尖 + 羽饰 + 希卡之眼 + 魔法发动机）
+  for (const side of [-1, 1]) {
+    const wing = new THREE.Group();
+    wing.position.set(side * 0.42, 0.05, 0.5);
+    wing.rotation.z = side * 0.14;
+    wing.rotation.y = side * -0.44;
+    const wp = [];
+    wp.push({ geo: shaded(new THREE.BoxGeometry(3.2, 0.09, 0.8).translate(side * 1.6, 0, 0), 'cream'), matrix: put() });
+    wp.push({ geo: shaded(new THREE.BoxGeometry(0.55, 0.11, 0.62).translate(side * 3.0, 0, 0), 'gold'), matrix: put() });
+    wp.push({ geo: shaded(new THREE.ConeGeometry(0.06, 0.55, 6).rotateX(Math.PI / 2).translate(side * 3.45, 0, 0.45), 'gold'), matrix: put() });
+    wp.push({ geo: shaded(new THREE.TorusGeometry(0.24, 0.04, 8, 22).rotateX(Math.PI / 2), 'bronze'), matrix: put(side * 1.35, 0.075, -0.02) });
+    wp.push({ geo: shaded(new THREE.ConeGeometry(0.05, 0.3, 3), 'gold'), matrix: put(side * 1.35, 0.1, -0.34, -0.5, 0, 0) });
+    wing.add(new THREE.Mesh(mergeColored(wp), vcMat));
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), glowCyan);
+    pupil.scale.set(1, 0.35, 1.35);
+    pupil.position.set(side * 1.35, 0.1, -0.02);
+    wing.add(pupil);
+    const p1 = new THREE.Mesh(shaded(new THREE.ConeGeometry(0.1, 1.15, 5).scale(1, 1, 0.3), 'ivory'), vcMat);
+    p1.geometry.translate(0, 0.55, 0);
+    p1.position.set(side * 3.3, 0.05, 0.15);
+    p1.rotation.x = 0.95; p1.rotation.z = -side * 0.15;
+    const p2 = new THREE.Mesh(shaded(new THREE.ConeGeometry(0.08, 0.9, 5).scale(1, 1, 0.3), 'gold'), vcMat);
+    p2.geometry.translate(0, 0.42, 0);
+    p2.position.set(side * 3.22, 0.02, 0.42);
+    p2.rotation.x = 1.35; p2.rotation.z = -side * 0.5;
+    wing.add(p1); wing.add(p2);
+    const eng = new THREE.Group();
+    eng.position.set(side * 2.05, -0.24, 0.12);
+    const ep = [];
+    ep.push({ geo: shaded(new THREE.BoxGeometry(0.09, 0.24, 0.26), 'bronze'), matrix: put(0, 0.2, 0) });
+    ep.push({ geo: shaded(new THREE.TorusGeometry(0.38, 0.08, 10, 24), 'bronze'), matrix: put() });
+    eng.add(new THREE.Mesh(mergeColored(ep), vcMat));
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), glowCyan);
+    eng.add(core); magicCores.push(core);
+    for (let k = 0; k < 3; k++) {
+      const st = new THREE.Mesh(shaded(new THREE.DodecahedronGeometry(0.085, 0), 'stone'), vcMat);
+      st.userData.k = k;
+      eng.add(st); magicStones.push(st);
+    }
+    wing.add(eng);
+    plane.add(wing);
   }
-  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.6, 0.45), bodyMat);
-  fin.position.set(0, 0.32, 1.35);
-  fin.rotation.x = -0.25;
-  plane.add(fin);
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.03, 1.6), accentMat);
-  stripe.position.set(0, 0.3, 0.2);
-  plane.add(stripe);
+
+  // 尾焰：双层青色魔光
+  const flameInner = new THREE.Mesh(
+    new THREE.ConeGeometry(0.13, 0.85, 8).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0xc8feff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  flameInner.position.set(0, 0.02, 3.0);
+  const flameOuter = new THREE.Mesh(
+    new THREE.ConeGeometry(0.23, 1.3, 8).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0x58d8e8, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  flameOuter.position.set(0, 0.02, 3.05);
+  magicFlames.push(flameInner, flameOuter);
+  plane.add(flameInner, flameOuter);
 }
-plane.scale.setScalar(0.6);
+plane.scale.setScalar(0.5);
+scene.add(plane);
 scene.add(plane);
 
 // ===== 弹药与特效 =====
@@ -1104,6 +1208,7 @@ function applyLevel() {
   bossSpawned = false;
   $("levelName").textContent = (levelIdx + 1) + " · " + L.name;
   $("levelKill").textContent = "0/" + L.quota;
+  $("killFill").style.width = "0%";
   $("bossBar").style.display = "none";
   if (L.types.includes("boss")) bossSpawned = false;
   showBanner(levelIdx, false);
@@ -1155,7 +1260,6 @@ function killEnemy(m) {
   score += pts;
   levelKills++;
   $("score").textContent = score;
-  $("ultCharge").textContent = Math.min(100, score - weapons.ultScoreAtLast) + "/100";
   const L = LEVELS[levelIdx];
   if (L.types.includes("boss") && m.userData.boss) {
     levelOver = true;
@@ -1165,6 +1269,7 @@ function killEnemy(m) {
     return;
   }
   $("levelKill").textContent = Math.min(levelKills, L.quota) + "/" + L.quota;
+  $("killFill").style.width = Math.min(100, levelKills / L.quota * 100) + "%";
   if (levelKills >= L.quota && levelIdx < LEVELS.length - 1) {
     levelIdx++;
     applyLevel();
@@ -1177,15 +1282,33 @@ function updateLivesHud() {
   if (el) el.textContent = "♥".repeat(Math.max(lives, 0)) + "♡".repeat(Math.max(3 - lives, 0));
 }
 function loseLife() {
-  lives--;
+  if (performance.now() < invincT) return;   // 双保险：无敌期内不重复扣命
+  lives = Math.max(0, lives - 1);
   updateLivesHud();
   const fx = document.getElementById("flash");
-  fx.style.transition = "none";
-  fx.style.background = "#ff4040";
-  fx.style.opacity = "0.4";
-  requestAnimationFrame(() => { fx.style.transition = "opacity .6s"; fx.style.opacity = "0"; });
+  if (fx) {
+    fx.style.transition = "none";
+    fx.style.background = "#ff4040";
+    fx.style.opacity = "0.4";
+    requestAnimationFrame(() => { fx.style.transition = "opacity .6s"; fx.style.opacity = "0"; });
+  }
   invincT = performance.now() + 2000;
   if (lives <= 0) gameOver();
+}
+// 撞浮空岛：无论剩余生命，直接坠机
+function instantDeath() {
+  if (performance.now() < invincT) return;   // 防同帧重复触发
+  lives = 0;
+  updateLivesHud();
+  const fx = document.getElementById("flash");
+  if (fx) {
+    fx.style.transition = "none";
+    fx.style.background = "#ff4040";
+    fx.style.opacity = "0.55";
+    requestAnimationFrame(() => { fx.style.transition = "opacity .8s"; fx.style.opacity = "0"; });
+  }
+  invincT = performance.now() + 2000;
+  gameOver();
 }
 function gameOver() {
   state.running = false;
@@ -1354,7 +1477,6 @@ function loop(t) {
 
   const fpsNow = dt > 0 ? 1 / dt : 0;
   fpsEma = fpsEma ? fpsEma * 0.95 + fpsNow * 0.05 : fpsNow;
-  if (t - fpsLastDomT > 500) { $("fps").textContent = fpsEma.toFixed(0); fpsLastDomT = t; }
 
   // 视觉步骤
   if (state.running && video.currentTime !== state.lastVideoTime) {
@@ -1373,7 +1495,6 @@ function loop(t) {
   let throttle = 1;
   if (L.openS !== null) throttle = THREE.MathUtils.clamp((L.openS - 1.1) / (1.9 - 1.1) * 5, 0, 5) / 5;
   const gear = Math.round(throttle * 5);
-  $("spd").textContent = gear + " 档 (" + Math.round(throttle * 100) + "%)";
 
   if (L.xS !== null) {
     let targetX = (L.xS - 0.5) * 20;
@@ -1510,6 +1631,7 @@ function loop(t) {
   }
   $("lockTrack").style.display = lockOn ? "block" : "none";
   $("lockFill").style.width = lockPct + "%";
+  $("ultTrack").style.display = lockOn ? "none" : "block";
 
   // HUD 状态
   const ws = $("wstate");
@@ -1522,7 +1644,12 @@ function loop(t) {
 
   $("rkAmmo").textContent = weapons.rocketReloadT != null ? "换弹中…" : weapons.rocketAmmo + "/" + ROCKET_MAG;
   $("msAmmo").textContent = weapons.missileReserve + "/" + MISSILE_RESERVE_MAX;
-  $("ultCharge").textContent = Math.min(ULT_COST, score - weapons.ultScoreAtLast) + "/" + ULT_COST;
+  const ultLeftMs = Math.max(0, weapons.ultEndT - t);
+  const ultPct = inUlt ? Math.min(100, ultLeftMs / ULT_DURATION_MS * 100)
+    : Math.min(100, (score - weapons.ultScoreAtLast) / ULT_COST * 100);
+  $("ultFill").style.width = ultPct + "%";
+  $("ultLabel").textContent = inUlt ? "💥 火力全开！剩 " + Math.ceil(ultLeftMs / 1000) + " 秒"
+    : (levelOver ? "旅 途 完 结" : "火力全开 充能 " + Math.min(ULT_COST, score - weapons.ultScoreAtLast) + "/" + ULT_COST);
 
   // ===== 环境动态：天色循环 + 松林后移 + 萤火虫漂移 =====
   {
@@ -1564,6 +1691,13 @@ function loop(t) {
       islands[ii].position.y += Math.sin(t * 0.0008 + ii) * 0.25 * dt;
       islands[ii].position.z += 12 * throttle * dt * 0.35;
       if (islands[ii].position.z > 16) islands[ii].position.z -= 260;
+      if (state.running && !levelOver && performance.now() > invincT
+          && plane.position.distanceTo(islands[ii].position) < islands[ii].userData.r + 1.25) {
+        deaths.push({ m: islands[ii], t: 0 });
+        islands.splice(ii, 1); ii--;
+        instantDeath();
+        continue;
+      }
     }
     // 光鳐振翅滑翔
     for (const mm of mantas) {
@@ -1650,7 +1784,7 @@ function loop(t) {
     if (hz.position.z > 10) { scene.remove(hz); hazards.splice(hazards.indexOf(hz), 1); continue; }
     if (state.running && performance.now() > invincT && plane.position.distanceTo(hz.position) < (hz.userData.size || 4) * 1.15 + 1.4) {
       scene.remove(hz); hazards.splice(hazards.indexOf(hz), 1);
-      loseLife();
+      instantDeath();
     }
   }
 
@@ -1667,6 +1801,21 @@ function loop(t) {
   {
     const inv = performance.now() < invincT;
     plane.visible = state.running && (!inv || Math.floor(performance.now() / 130) % 2 === 0);
+  }
+  // 魔法战机动态：核心脉冲 / 悬浮石公转 / 双层尾焰抖动
+  {
+    const mt = performance.now();
+    const pulse = 1 + Math.sin(mt * 0.004) * 0.12;
+    for (const c of magicCores) c.scale.setScalar(pulse);
+    for (const st of magicStones) {
+      const ang = mt * 0.0014 + st.userData.k * Math.PI * 2 / 3;
+      st.position.set(Math.cos(ang) * 0.58, Math.sin(ang) * 0.58, Math.sin(mt * 0.002 + st.userData.k) * 0.05);
+      st.rotation.x = mt * 0.0012 + st.userData.k;
+      st.rotation.y = mt * 0.0009;
+    }
+    const f = 1 + Math.sin(mt * 0.017) * 0.18;
+    magicFlames[0].scale.z = f;
+    magicFlames[1].scale.z = 0.8 + f * 0.3;
   }
 
   // ===== 弹药更新 =====
