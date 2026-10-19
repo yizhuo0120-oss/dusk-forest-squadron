@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+{ "imports": { "three": "./vendor/three/three.module.js" } }
 </script>
 <title>暮林机战 · 手势飞行射击</title>
 <style>
@@ -208,6 +208,7 @@
 </div>
 
 <script type="module">
+import { loadGestureModel, loadVisionWasm } from "./model-loader.mjs";
 const LIB_URL = "./vendor/vision_bundle.mjs";   // 本地打包：不依赖境外 CDN
 const WASM_URL = "./vendor/wasm";
 const MODEL_URL = "./vendor/gesture_recognizer.task";
@@ -586,7 +587,7 @@ function buildIsland(S) {
 // 大浮岛：优先加载用户 GLB 模型（trimesh 生成，顶点色网格），失败回退程序化
 async function setupBigIslands() {
   try {
-    const { GLTFLoader } = await import("https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js");
+    const { GLTFLoader } = await import("./vendor/three/loaders/GLTFLoader.js");
     const loader = new GLTFLoader();
     const gltf = await new Promise((res, rej) => loader.load("./assets/island_tree_glb.glb", res, undefined, rej));
     const template = gltf.scene;
@@ -1439,34 +1440,45 @@ $("startBtn").addEventListener("click", start);
 async function start() {
   const btn = $("startBtn"), msg = $("bootMsg");
   btn.disabled = true;
+  let stream;
+  let wasmObjectUrl;
   try {
+    if (location.protocol === "file:") {
+      throw new Error("请通过游戏网址打开，或使用本地服务器预览，不能直接双击 HTML 文件");
+    }
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      throw new Error("摄像头需要 HTTPS 网址；本地预览请使用 localhost");
+    }
     msg.style.color = "";
     msg.textContent = "① 加载识别库与 3D 库…";
-    let lib, wasmUrl = WASM_URL, modelUrl = MODEL_URL;
-    try {
-      lib = await import(LIB_URL);
-    } catch (e) {
-      // file:// 双击打开时浏览器会拦截本地 ES 模块，此时回退 CDN
-      msg.textContent = "① 本地依赖被拦截（file:// 模式），回退 CDN…";
-      lib = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14");
-      wasmUrl = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
-      modelUrl = "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task";
-    }
+    const lib = await import(LIB_URL);
     msg.textContent = "② 请求摄像头权限…";
-    const stream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }, audio: false
     });
     video.srcObject = stream;
     await video.play();
-    msg.textContent = "③ 加载手势模型（约 8MB）…";
-    const vision = await lib.FilesetResolver.forVisionTasks(wasmUrl);
+    const vision = await lib.FilesetResolver.forVisionTasks(WASM_URL);
+    const progress = ["手势模型：准备中", "识别引擎：准备中"];
+    const report = (index) => (text) => {
+      progress[index] = text;
+      msg.textContent = "③ " + progress.join(" ｜ ");
+    };
+    const [model, wasm] = await Promise.all([
+      loadGestureModel(MODEL_URL, report(0)),
+      loadVisionWasm(vision.wasmBinaryPath, report(1))
+    ]);
+    wasmObjectUrl = URL.createObjectURL(new Blob([wasm], { type: "application/wasm" }));
+    vision.wasmBinaryPath = wasmObjectUrl;
+    msg.textContent = "④ 初始化手势识别…";
     try {
       recognizer = await lib.GestureRecognizer.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: modelUrl, delegate: "GPU" }, runningMode: "VIDEO", numHands: 2
+        baseOptions: { modelAssetBuffer: model.slice(), delegate: "GPU" }, runningMode: "VIDEO", numHands: 2
       });
     } catch (e) {
+      msg.textContent = "④ 切换兼容模式，正在初始化…";
       recognizer = await lib.GestureRecognizer.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: modelUrl, delegate: "CPU" }, runningMode: "VIDEO", numHands: 2
+        baseOptions: { modelAssetBuffer: model.slice(), delegate: "CPU" }, runningMode: "VIDEO", numHands: 2
       });
     }
     pip.width = video.videoWidth; pip.height = video.videoHeight;
@@ -1477,6 +1489,8 @@ async function start() {
     state.running = true;
     state.lastHandT = performance.now();
   } catch (err) {
+    stream?.getTracks().forEach((track) => track.stop());
+    video.srcObject = null;
     msg.textContent = "";
     $("bootMsg").style.color = "#ff8a8a";
     $("bootMsg").textContent = err.name === "NotAllowedError"
@@ -1485,6 +1499,8 @@ async function start() {
         ? "摄像头被占用 — 关掉其他使用摄像头的页面再刷新"
         : "启动失败: " + err.message;
     btn.disabled = false;
+  } finally {
+    if (wasmObjectUrl) URL.revokeObjectURL(wasmObjectUrl);
   }
 }
 
