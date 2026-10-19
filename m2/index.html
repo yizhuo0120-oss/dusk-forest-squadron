@@ -359,6 +359,7 @@ const camera3 = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 4
 camera3.position.set(0, 13.5, 8);
 camera3.lookAt(0, 17.5, -20);   // 抬高视线：地平线压低，地面显远
 const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));   // 高分屏帧率保护
 renderer.setSize(innerWidth, innerHeight);
 renderer.domElement.className = "game";
 document.body.prepend(renderer.domElement);
