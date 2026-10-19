@@ -865,12 +865,11 @@ for (let tc = 0; tc < 3; tc++) {
 
 
 const MID_BANDS = [
-  { z0: 30,  z1: 55,  s0: 3.6, s1: 4.8,  x0: 15, x1: 24 },
-  { z0: 65,  z1: 110, s0: 6.0, s1: 8.0,  x0: 20, x1: 38 },
-  { z0: 115, z1: 175, s0: 8.0, s1: 10.5, x0: 26, x1: 50 },
-  { z0: 180, z1: 245, s0: 10,  s1: 13,   x0: 34, x1: 68 }
+  { z0: 85,  z1: 125, s0: 4.2, s1: 5.6, x0: 24, x1: 36 },
+  { z0: 130, z1: 175, s0: 6.5, s1: 8.5,  x0: 30, x1: 50 },
+  { z0: 182, z1: 245, s0: 8.5, s1: 11,   x0: 36, x1: 66 }
 ];
-for (let i2 = 0; i2 < 4; i2++) {
+for (let i2 = 0; i2 < MID_BANDS.length; i2++) {
   const band = MID_BANDS[i2];
   const zPos = -(band.z0 + Math.random() * (band.z1 - band.z0));
   const S = band.s0 + Math.random() * (band.s1 - band.s0);
@@ -888,13 +887,11 @@ for (let i2 = 0; i2 < 4; i2++) {
   scene.add(g); islands.push(g);
 }
 const SMALL_BANDS = [
-  { z0: 32,  z1: 48,  s0: 2.0, s1: 2.6, x0: 13, x1: 19 },
-  { z0: 40,  z1: 70,  s0: 3.0, s1: 4.2, x0: 16, x1: 28 },
-  { z0: 75,  z1: 120, s0: 4.0, s1: 5.5, x0: 20, x1: 36 },
-  { z0: 125, z1: 185, s0: 5.0, s1: 7.0, x0: 26, x1: 46 },
-  { z0: 190, z1: 250, s0: 6.0, s1: 8.0, x0: 32, x1: 60 }
+  { z0: 78,  z1: 115, s0: 2.4, s1: 3.4, x0: 20, x1: 30 },
+  { z0: 120, z1: 165, s0: 3.2, s1: 4.6, x0: 26, x1: 40 },
+  { z0: 170, z1: 235, s0: 4.2, s1: 6.0, x0: 32, x1: 55 }
 ];
-for (let i2 = 0; i2 < 5; i2++) {
+for (let i2 = 0; i2 < SMALL_BANDS.length; i2++) {
   const band = SMALL_BANDS[i2];
   const zPos = -(band.z0 + Math.random() * (band.z1 - band.z0));
   const S = band.s0 + Math.random() * (band.s1 - band.s0);
@@ -1787,7 +1784,7 @@ function loop(t) {
       ud.hitT = 0;
       e.material = enemyMats[ud.type];
     }
-    if (e.position.z > 8) { scene.remove(e); enemies.splice(enemies.indexOf(e), 1); }
+    if (e.position.z > 2) { scene.remove(e); enemies.splice(enemies.indexOf(e), 1); }
   }
 
   // ===== 航路障碍小浮岛：随机刷在航线上，逼近需躲避 =====
@@ -1806,7 +1803,7 @@ function loop(t) {
     for (const ch of hz.children) {
       if (ch.isSprite) ch.material.opacity = 0.45 + Math.sin(t * 0.008) * 0.35;
     }
-    if (hz.position.z > 10) { scene.remove(hz); hazards.splice(hazards.indexOf(hz), 1); continue; }
+    if (hz.position.z > -2) { scene.remove(hz); hazards.splice(hazards.indexOf(hz), 1); continue; }
     if (state.running && performance.now() > invincT && plane.position.distanceTo(hz.position) < (hz.userData.size || 4) * 1.15 + 1.4) {
       scene.remove(hz); hazards.splice(hazards.indexOf(hz), 1);
       instantDeath();

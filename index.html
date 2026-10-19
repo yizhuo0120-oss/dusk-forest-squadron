@@ -93,6 +93,35 @@
   }
   .cam-note::before { content: "●"; color: #6aad7a; font-size: 9px; }
 
+  /* 英雄区 CSS 场景：浮空岛 / 云 / 战机剪影 */
+  .hero-scene { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .isl { position: absolute; aspect-ratio: 1.8 / 1; animation: islf 7s ease-in-out infinite; filter: drop-shadow(0 14px 18px rgba(90,70,130,0.25)); }
+  .isl .top {
+    width: 100%; height: 30%;
+    background: linear-gradient(180deg, #9ad868, #58a44c);
+    border-radius: 50% 50% 14% 14% / 110% 110% 24% 24%;
+  }
+  .isl .rock {
+    width: 76%; height: 68%; margin: -4% auto 0;
+    background: linear-gradient(180deg, #6a7aa8 0%, #3c4a74 62%, #2c3654 100%);
+    clip-path: polygon(4% 0, 96% 0, 80% 42%, 60% 100%, 32% 90%, 12% 50%);
+  }
+  @keyframes islf { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-16px); } }
+  .hcloud {
+    position: absolute; border-radius: 50%; filter: blur(7px);
+    background: radial-gradient(ellipse at 50% 58%, rgba(255,252,246,0.95) 0%, rgba(255,252,246,0.35) 55%, rgba(255,252,246,0) 75%);
+    animation: cld 16s ease-in-out infinite alternate;
+  }
+  @keyframes cld { from { transform: translateX(0); } to { transform: translateX(46px); } }
+  .hplane { position: absolute; width: 84px; opacity: 0.92; animation: glide 30s linear infinite; }
+  @keyframes glide {
+    0%   { transform: translate(-14vw, 4vh) scaleX(1); }
+    48%  { transform: translate(112vw, -3vh) scaleX(1); }
+    50%  { transform: translate(114vw, -3vh) scaleX(-1); }
+    98%  { transform: translate(-16vw, 5vh) scaleX(-1); }
+    100% { transform: translate(-14vw, 4vh) scaleX(1); }
+  }
+
   .scroll-hint {
     position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
     color: #9a7a9a; font-size: 12px; letter-spacing: 4px;
@@ -202,6 +231,25 @@
   }
   footer a { color: #b08a5a; text-decoration: none; }
 
+  /* 实机演示视频 */
+  .video-frame {
+    border-radius: 22px; overflow: hidden; background: #1a1626;
+    border: 1px solid rgba(180, 160, 140, 0.3);
+    box-shadow: 0 16px 50px rgba(120, 100, 140, 0.18);
+  }
+  .video-frame video { display: block; width: 100%; aspect-ratio: 16 / 9; }
+  .video-note { margin-top: 14px; text-align: center; font-size: 13.5px; letter-spacing: 1px; color: #8a7f8a; }
+  .video-note b { color: #b0724a; }
+
+  /* 生存法则 */
+  .rules {
+    margin-top: 26px; padding: 18px 26px; text-align: center;
+    font-size: 14px; line-height: 2; letter-spacing: 1px; color: #6a5a6a;
+    background: rgba(255, 240, 220, 0.55); border: 1px dashed rgba(176, 138, 90, 0.45);
+    border-radius: 16px;
+  }
+  .rules b { color: #b0724a; }
+
   /* 滚动浮现 */
   .reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.9s, transform 0.9s; }
   .reveal.on { opacity: 1; transform: none; }
@@ -216,19 +264,38 @@
 </div>
 
 <header class="hero">
+  <div class="hero-scene" aria-hidden="true">
+    <div class="hcloud" style="width:340px;height:120px;left:5%;top:16%;"></div>
+    <div class="hcloud" style="width:250px;height:92px;right:9%;top:11%;animation-delay:-6s;"></div>
+    <div class="hcloud" style="width:430px;height:150px;right:-5%;top:58%;opacity:.85;animation-delay:-11s;"></div>
+    <div class="isl" style="width:150px;left:9%;top:58%;"><div class="top"></div><div class="rock"></div></div>
+    <div class="isl" style="width:92px;right:13%;top:36%;animation-delay:-2.6s;opacity:.92;"><div class="top"></div><div class="rock"></div></div>
+    <div class="isl" style="width:56px;right:30%;top:20%;animation-delay:-4.8s;opacity:.6;"><div class="top"></div><div class="rock"></div></div>
+    <svg class="hplane" style="top:26%;" viewBox="0 0 64 24"><path fill="#fff6e4" d="M2 12 L28 8 L42 8 L55 3 L59 4 L49 10 L61 10 L64 12 L61 14 L49 14 L59 20 L55 21 L42 16 L28 16 Z"/></svg>
+  </div>
   <div class="badge">手势飞行射击 · WEB GAME</div>
   <h1 class="title">暮林机战</h1>
   <div class="en">DUSK FOREST SQUADRON</div>
-  <p class="tagline">在暮色的天空之国，用<b>双手</b>驾驶战机，穿越五片空域。</p>
+  <p class="tagline">在暮色的天空之国，用<b>双手</b>驾驶<b>希卡之眼魔法战机</b>，穿越五片空域。</p>
   <div class="cta">
     <a class="btn primary" href="./m2/index.html">立即起飞</a>
     <a class="btn ghost" href="#how">查看玩法</a>
   </div>
-  <div class="cam-note">需要摄像头 · 画面全程本地处理，绝不上传</div>
+  <div class="cam-note">需要摄像头 · 画面全程本地处理，绝不上传 · 请在光线充足时游玩</div>
   <div class="scroll-hint">往下滚动</div>
 </header>
 
 <main>
+  <section id="demo" class="reveal">
+    <div class="sec-tag">GAMEPLAY</div>
+    <div class="sec-title">实机演示</div>
+    <p class="sec-sub">真实对局录制：希卡之眼魔法战机 · 空域实拍，所见即所玩。</p>
+    <div class="video-frame reveal">
+      <video src="./media/demo.mp4" controls preload="metadata" playsinline></video>
+    </div>
+    <p class="video-note">⚠️ 请在<b>光线充足</b>的环境游玩——摄像头看得清手，手势才灵光。</p>
+  </section>
+
   <section id="how" class="reveal">
     <div class="sec-tag">HOW TO PLAY</div>
     <div class="sec-title">双手分工</div>
@@ -253,6 +320,7 @@
         </ul>
       </div>
     </div>
+    <div class="rules reveal"><b>生存法则</b> ｜ 撞上暗影精灵 · 扣一条命 ｜ 撞上浮空岛 · 直接坠机 ｜ 共 3 条命，命尽旅程结束 ｜ 达成击杀配额，进入下一空域</div>
   </section>
 
   <section id="weapons" class="reveal">
