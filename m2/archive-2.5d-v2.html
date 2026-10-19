@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>M2 存档 · 2.5D v2（双层瞄准+视觉升级+大空间视差）</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+  body { font-family: Consolas, "Microsoft YaHei", monospace; color: #d7e2ee; }
+  canvas.game { position: fixed; inset: 0; display: block; }
+
+  #hud {
+    position: fixed; top: 12px; left: 14px; z-index: 10;
+    font-size: 14px; line-height: 1.7; text-shadow: 0 1px 2px #000;
+  }
+  #wstate { font-size: 18px; font-weight: 700; color: #35e0ff; }
+  #wstate.fire { color: #ff9f43; }
+  #lockTrack { width: 180px; height: 8px; background: #222; margin-top: 4px; display: none; }
+  #lockFill { display: block; height: 100%; width: 0%; background: linear-gradient(90deg,#ff9f43,#ff5d5d); }
+  #tip { color: #6b7a8d; font-size: 12px; margin-top: 8px; }
+
+  #pip { position: fixed; left: 14px; bottom: 14px; width: 240px; z-index: 10; border: 1px solid #333; border-radius: 4px; }
+
+  /* 准星：右手掌心实时驱动，屏幕位置动态更新 */
+  #crosshair { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 46px; height: 46px; z-index: 9; pointer-events: none; }
+  #crosshair b { position: absolute; background: #35e0ff; box-shadow: 0 0 5px #35e0ff; }
+  #crosshair b:nth-child(1) { left: 50%; top: 0; width: 2px; height: 13px; transform: translateX(-50%); }
+  #crosshair b:nth-child(2) { left: 50%; bottom: 0; width: 2px; height: 13px; transform: translateX(-50%); }
+  #crosshair b:nth-child(3) { top: 50%; left: 0; height: 2px; width: 13px; transform: translateY(-50%); }
+  #crosshair b:nth-child(4) { top: 50%; right: 0; height: 2px; width: 13px; transform: translateY(-50%); }
+  #crosshair i { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; background: #ff9f43; border-radius: 50%; transform: translate(-50%, -50%); }
+
+  #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .5s; z-index: 20; }
+
+  #boot {
+    position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.92);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    text-align: center;
+  }
+  #boot h2 { font-size: 17px; }
+  #boot p { font-size: 13px; color: #6b7a8d; line-height: 1.9; }
+  #startBtn {
+    background: #35e0ff; color: #04222b; border: none; cursor: pointer;
+    font-size: 15px; font-weight: 700; padding: 12px 36px; border-radius: 6px; font-family: inherit;
+  }
+  #startBtn:disabled { opacity: .4; cursor: wait; }
+  #bootMsg { font-size: 13px; color: #35e0ff; min-height: 18px; }
+</style>
+</head>
+<body>
+
+<script>
+  window.addEventListener("error", function (ev) {
+    var m = document.getElementById("bootMsg");
+    if (m) { m.style.color = "#ff5d5d"; m.textContent = "脚本错误: " + ((ev.error && ev.error.message) || ev.message || ev.type); }
+  });
+  window.addEventListener("unhandledrejection", function (ev) {
+    var m = document.getElementById("bootMsg");
+    if (m) { m.style.color = "#ff5d5d"; m.textContent = "异步错误: " + ((ev.reason && ev.reason.message) || ev.reason); }
+  });
+</script>
+
+<div id="hud">
+  <div>得分 <b id="score">0</b></div>
+  <div>速度 <b id="spd">--</b></div>
+  <div id="wstate">空仓挂机</div>
+  <div id="lockTrack"><i id="lockFill"></i></div>
+  <div id="tip">左手=驾驶（移动+倾斜）+油门（全开极速/握拳0速） ｜ 右手移动=准星瞄准 ｜ 张掌=保险 ｜ 握拳=机枪 ｜ 手枪=火箭弹 ｜ 比耶=导弹锁定1.5s ｜ 爱你=大招</div>
+</div>
+<canvas id="pip"></canvas>
+<div id="crosshair"><b></b><b></b><b></b><b></b><i></i></div>
+<div id="flash"></div>
+
+<div id="boot">
+  <h2>M2 最小可玩版 · 手势驾驶 + 武器验证（2.5D 走廊版存档）</h2>
+  <p>
+    红色方块 = 靶机，飞过来打掉它们（本版无碰撞伤害，穿身无惩罚）<br>
+    测试点：左手驾驶（倾斜/平移/俯冲）· 左手开合当油门（全开极速、握拳0速停）· 握右拳机枪连发 · 手枪姿势火箭弹（任意方向）<br>
+    比耶锁定1.5秒自动发射追踪导弹（粉色准星=锁定目标） · 爱你放大招清屏
+  </p>
+  <button id="startBtn">开启摄像头</button>
+  <div id="bootMsg"></div>
+</div>
+
+<script type="module">
+const LIB_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task";
+
+const HAND_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]
+];
+const SMOOTH = 0.5, DEBOUNCE_N = 2;
+const $ = id => document.getElementById(id);
+
+const state = {
+  running: false,
+  left:  { bankS: null, xS: null, yS: null, openS: null, buf: [], gest: "None" },
+  right: { buf: [], gest: "None", gun: false, seenT: 0, dx: 0, dy: 0 },
+  rcal: { done: false, cx: 0, cy: 0, sumX: 0, sumY: 0, n: 0 },
+  frameHands: [], handCountNow: 0, lastVideoTime: -1, lastHandT: 0
+};
+
+// ===== 双手身份跟踪（M1 已验证的方案原样移植）=====
+const track = { slots: { left: null, right: null } };
+const HOLD_MS = 250, MATCH_DIST = 0.30;
+
+function isGunPose(lm) {
+  const scale = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y) || 1e-6;
+  const d = (a, b) => Math.hypot(lm[a].x - lm[b].x, lm[a].y - lm[b].y);
+  const idxExt = d(8, 0) / scale, midExt = d(12, 0) / scale;
+  return idxExt > 1.1 && midExt < idxExt * 0.75 &&
+    d(12, 9) / scale < 0.9 && d(16, 13) / scale < 0.9 && d(20, 17) / scale < 0.9;
+}
+
+function associate(res, now) {
+  const hands = res.handedness || res.handednesses || [];
+  const dets = [];
+  for (let i = 0; i < hands.length; i++) {
+    const lm = res.landmarks[i];
+    if (!lm) continue;
+    const reported = hands[i]?.[0]?.categoryName;
+    const reportedLabel = reported === "Left" ? "Right" : reported === "Right" ? "Left" : reported; // 实测需翻转
+    const g = res.gestures?.[i]?.[0];
+    dets.push({ lm, reportedLabel, x: lm[0].x, y: lm[0].y, gest: g ? g.categoryName : "None", gun: isGunPose(lm) });
+  }
+  state.handCountNow = dets.length;
+  const result = [], used = new Set(), cand = [];
+  for (const side of ["left", "right"]) {
+    const s = track.slots[side];
+    if (!s) continue;
+    if (now - s.lastT > HOLD_MS) { track.slots[side] = null; continue; }
+    dets.forEach((d, di) => {
+      if (!used.has(di)) {
+        const dist = Math.hypot(d.x - s.x, d.y - s.y);
+        if (dist < MATCH_DIST) cand.push({ side, di, dist });
+      }
+    });
+  }
+  cand.sort((a, b) => a.dist - b.dist);
+  for (const c of cand) {
+    if (used.has(c.di) || !track.slots[c.side]) continue;
+    used.add(c.di);
+    const d = dets[c.di];
+    track.slots[c.side] = { x: d.x, y: d.y, lastT: now };
+    result.push({ label: c.side === "left" ? "Left" : "Right", lm: d.lm, gest: d.gest, gun: d.gun });
+  }
+  for (let di = 0; di < dets.length; di++) {
+    if (used.has(di)) continue;
+    const d = dets[di];
+    let side = d.x < 0.42 ? "left" : d.x > 0.58 ? "right" : d.reportedLabel;
+    if (result.some(r => r.label === (side === "left" ? "Left" : "Right"))) {
+      const other = side === "left" ? "Right" : "Left";
+      if (!result.some(r => r.label === other)) side = other === "Right" ? "right" : "left";
+    }
+    track.slots[side] = { x: d.x, y: d.y, lastT: now };
+    result.push({ label: side === "left" ? "Left" : "Right", lm: d.lm, gest: d.gest, gun: d.gun });
+  }
+  return result;
+}
+
+function process(res, now) {
+  state.frameHands = associate(res, now);
+  for (const { label, lm, gest, gun } of state.frameHands) {
+    const slot = label === "Left" ? state.left : state.right;
+    slot.buf.push(gest);
+    if (slot.buf.length > DEBOUNCE_N) slot.buf.shift();
+    if (slot.buf.length === DEBOUNCE_N && slot.buf.every(x => x === slot.buf[0]) && slot.buf[0] !== slot.gest) {
+      slot.gest = slot.buf[0];
+    }
+    if (label === "Left") {
+      const p5 = lm[5], p17 = lm[17];
+      let deg = Math.atan2(p5.y - p17.y, p5.x - p17.x) * 180 / Math.PI;
+      if (deg > 90) deg -= 180;
+      if (deg < -90) deg += 180;
+      state.left.bankS = state.left.bankS === null ? deg : state.left.bankS + (deg - state.left.bankS) * SMOOTH;
+      const x = lm[9].x, y = lm[9].y;
+      state.left.xS = state.left.xS === null ? x : state.left.xS + (x - state.left.xS) * SMOOTH;
+      state.left.yS = state.left.yS === null ? y : state.left.yS + (y - state.left.yS) * SMOOTH;
+      // 油门开合度：四指尖到腕距离 ÷ 手掌尺度（全开≈1.9，握拳≈1.0）
+      const dW = j => Math.hypot(lm[j].x - lm[0].x, lm[j].y - lm[0].y);
+      const scale = Math.hypot(lm[9].x - lm[0].x, lm[9].y - lm[0].y) || 1e-6;
+      const open = (dW(8) + dW(12) + dW(16) + dW(20)) / (4 * scale);
+      state.left.openS = state.left.openS === null ? open : state.left.openS + (open - state.left.openS) * 0.3;
+    } else {
+      state.right.gun = gun;
+      state.right.seenT = now;
+      // 右手掌心：自动校准中心（前15帧）后取偏移 → 准星微调（左手大调、右手微调）
+      const rx = lm[9].x, ry = lm[9].y;
+      const C = state.rcal;
+      if (!C.done) {
+        C.sumX += rx; C.sumY += ry; C.n++;
+        if (C.n >= 15) { C.cx = C.sumX / C.n; C.cy = C.sumY / C.n; C.done = true; }
+      } else {
+        const dx = rx - C.cx, dy = ry - C.cy;
+        state.right.dx += (dx - state.right.dx) * SMOOTH;
+        state.right.dy += (dy - state.right.dy) * SMOOTH;
+      }
+    }
+  }
+  if (state.frameHands.length > 0) state.lastHandT = now;
+  // 右手丢失超 2 秒 → 解除校准，重新入画时自动重校
+  const hasR = state.frameHands.some(h => h.label === "Right");
+  if (!hasR && now - state.right.seenT > 2000 && state.rcal.done) {
+    state.rcal.done = false; state.rcal.n = 0; state.rcal.sumX = 0; state.rcal.sumY = 0;
+  }
+}
+
+// ===== Three.js 场景（2.5D 走廊：飞机固定朝 -z，靶机迎面飞来）=====
+const THREE = await import("https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js");
+const scene = new THREE.Scene();
+const camera3 = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 200);
+camera3.position.set(0, 1.5, 8);
+camera3.lookAt(0, 0, -20);
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setSize(innerWidth, innerHeight);
+renderer.domElement.className = "game";
+document.body.prepend(renderer.domElement);
+addEventListener("resize", () => {
+  camera3.aspect = innerWidth / innerHeight;
+  camera3.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ===== 环境：渐变天空 + 地面网格 + 星空（相机固定，全部静态摆放）=====
+scene.fog = new THREE.Fog(0x14283f, 100, 190);
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(180, 24, 12),
+  new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false,
+    uniforms: {
+      top: { value: new THREE.Color(0x05080f) },
+      mid: { value: new THREE.Color(0x14283f) },
+      bot: { value: new THREE.Color(0x2a4a6a) }
+    },
+    vertexShader: `varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `
+      varying vec3 vP; uniform vec3 top; uniform vec3 mid; uniform vec3 bot;
+      void main(){
+        float h = normalize(vP).y;
+        vec3 c = h > 0.0 ? mix(mid, top, pow(h, 0.7)) : mix(mid, bot, pow(-h, 0.5));
+        gl_FragColor = vec4(c, 1.0);
+      }`
+  })
+);
+scene.add(sky);
+const grid = new THREE.GridHelper(400, 40, 0x3a6a9a, 0x1d3a52);
+grid.material.transparent = true;
+grid.material.opacity = 0.55;
+grid.position.set(0, -5.2, -60);
+scene.add(grid);
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0x0a1420 })
+);
+ground.position.set(0, -5.3, -60);
+scene.add(ground);
+const starPos = new Float32Array(400 * 3);
+for (let i = 0; i < 400; i++) {
+  starPos[i * 3] = (Math.random() - 0.5) * 80;
+  starPos[i * 3 + 1] = Math.random() * 45 - 2;
+  starPos[i * 3 + 2] = -Math.random() * 160 + 10;
+}
+const starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
+scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0x8fa3bd, size: 0.5 })));
+
+// 玩家：机身+垂直尾翼+主翼（青色锥头=机头），区分正反面
+const plane = new THREE.Group();
+{
+  const body = new THREE.Mesh(
+    new THREE.ConeGeometry(0.55, 1.8, 4).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0x35e0ff })
+  );
+  plane.add(body);
+  const trimMat = new THREE.MeshBasicMaterial({ color: 0xe8f4ff });
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.55, 0.5), trimMat);   // 垂直尾翼
+  fin.position.set(0, 0.28, 0.65);
+  plane.add(fin);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.07, 0.55), trimMat);  // 主翼
+  wing.position.set(0, -0.05, 0.35);
+  plane.add(wing);
+}
+scene.add(plane);
+
+const enemyGeo = new THREE.OctahedronGeometry(0.75);
+const enemyMat = new THREE.MeshBasicMaterial({ color: 0xff4444 });
+const enemyWireGeo = new THREE.OctahedronGeometry(1.0);
+const enemyWireMat = new THREE.MeshBasicMaterial({ color: 0xffaaaa, wireframe: true, transparent: true, opacity: 0.35 });
+const bulletGeo = new THREE.SphereGeometry(0.12, 6, 6);
+const bulletMat = new THREE.MeshBasicMaterial({ color: 0xffe066 });
+const rocketGeo = new THREE.ConeGeometry(0.28, 1.1, 6).rotateX(-Math.PI / 2);
+const rocketMat = new THREE.MeshBasicMaterial({ color: 0xff8c00 });
+const missileGeo = new THREE.SphereGeometry(0.3, 8, 8);
+const missileMat = new THREE.MeshBasicMaterial({ color: 0xff4fd8 });
+// 锁定准星：套在被锁定的靶机外面
+const reticle = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(1.5, 1.5, 1.5)),
+  new THREE.LineBasicMaterial({ color: 0xff4fd8 })
+);
+reticle.visible = false;
+scene.add(reticle);
+// 准星对应的世界空间瞄点（相机视线 × 手掌映射位置，深度约 z=-58 靶机层）
+state.aimWorld = new THREE.Vector3(0, 0.5, -58);
+
+const enemies = [], bullets = [], rockets = [], missiles = [], deaths = [];
+let score = 0, nextSpawn = 0;
+
+function spawnEnemy() {
+  const m = new THREE.Mesh(enemyGeo, enemyMat);
+  m.add(new THREE.Mesh(enemyWireGeo, enemyWireMat));   // 线框外壳
+  m.position.set((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 7, -70);
+  scene.add(m); enemies.push(m);
+}
+function killEnemy(m, pts) {
+  scene.remove(m);
+  enemies.splice(enemies.indexOf(m), 1);
+  deaths.push({ m, t: 0 });
+  score += pts;
+  $("score").textContent = score;
+}
+
+// ===== 武器 =====
+const weapons = { mgNext: 0, rocketHeld: false, ultHeld: false, ultLast: -9999, chargeStart: null, firedAt: null, chargeTarget: null };
+const MISSILE_CHARGE_MS = 1500;
+
+function fireMG() {
+  const b = new THREE.Mesh(bulletGeo, bulletMat);
+  b.position.copy(plane.position); b.position.z -= 1.2;
+  b.userData.dir = state.aimWorld.clone().sub(b.position).normalize();
+  scene.add(b); bullets.push(b);
+}
+function fireRocket() {
+  const r = new THREE.Mesh(rocketGeo, rocketMat);
+  r.position.copy(plane.position); r.position.z -= 1.5;
+  r.userData.dir = state.aimWorld.clone().sub(r.position).normalize();
+  r.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), r.userData.dir);
+  scene.add(r); rockets.push(r);
+}
+function launchMissile(target) {
+  const m = new THREE.Mesh(missileGeo, missileMat);
+  m.position.copy(plane.position); m.position.z -= 1.5;
+  m.userData.dir = new THREE.Vector3(0, 0, -1);
+  m.userData.target = target || null;
+  if (!m.userData.target) {
+    let best = null, bd = 1e9;
+    for (const e of enemies) {
+      const d = e.position.distanceTo(state.aimWorld);
+      if (d < bd) { bd = d; best = e; }
+    }
+    m.userData.target = best;
+  }
+  scene.add(m); missiles.push(m);
+}
+function doUlt() {
+  $("flash").style.transition = "none";
+  $("flash").style.opacity = "0.85";
+  requestAnimationFrame(() => { $("flash").style.transition = "opacity .5s"; $("flash").style.opacity = "0"; });
+  for (const e of [...enemies]) killEnemy(e, 1);
+}
+
+// ===== 启动 =====
+const video = document.createElement("video");
+video.setAttribute("playsinline", ""); video.muted = true;
+const pip = $("pip"), pctx = pip.getContext("2d");
+const cross = $("crosshair");
+// 识别用降采样画布：识别帧率更高，手势更灵敏（显示仍用全分辨率 pip）
+const det = document.createElement("canvas");
+const dctx = det.getContext("2d");
+let recognizer = null;
+
+$("startBtn").addEventListener("click", start);
+
+async function start() {
+  const btn = $("startBtn"), msg = $("bootMsg");
+  btn.disabled = true;
+  try {
+    msg.style.color = "";
+    msg.textContent = "① 加载识别库与 3D 库…";
+    const lib = await import(LIB_URL);
+    msg.textContent = "② 请求摄像头权限…";
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }, audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+    msg.textContent = "③ 加载手势模型（约 8MB）…";
+    const vision = await lib.FilesetResolver.forVisionTasks(WASM_URL);
+    try {
+      recognizer = await lib.GestureRecognizer.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" }, runningMode: "VIDEO", numHands: 2
+      });
+    } catch (e) {
+      recognizer = await lib.GestureRecognizer.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" }, runningMode: "VIDEO", numHands: 2
+      });
+    }
+    pip.width = video.videoWidth; pip.height = video.videoHeight;
+    det.width = 640; det.height = Math.round(640 * video.videoHeight / video.videoWidth);
+    $("boot").style.display = "none";
+    state.running = true;
+    state.lastHandT = performance.now();
+  } catch (err) {
+    msg.textContent = "";
+    $("bootMsg").style.color = "#ff5d5d";
+    $("bootMsg").textContent = err.name === "NotAllowedError"
+      ? "摄像头权限被拒绝 — 地址栏允许后刷新"
+      : err.name === "NotReadableError"
+        ? "摄像头被占用 — 关掉 M1 页面/TouchDesigner 再刷新"
+        : "启动失败: " + err.message;
+    btn.disabled = false;
+  }
+}
+
+// ===== 主循环 =====
+let lastT = 0;
+function loop(t) {
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (t - lastT) / 1000 || 0.016);
+  lastT = t;
+
+  // 视觉步骤
+  if (state.running && video.currentTime !== state.lastVideoTime) {
+    state.lastVideoTime = video.currentTime;
+    const w = pip.width, h = pip.height;
+    pctx.save(); pctx.translate(w, 0); pctx.scale(-1, 1); pctx.drawImage(video, 0, 0, w, h); pctx.restore();
+    dctx.save(); dctx.translate(det.width, 0); dctx.scale(-1, 1); dctx.drawImage(video, 0, 0, det.width, det.height); dctx.restore();
+    const res = recognizer.recognizeForVideo(det, t);
+    process(res, t);
+    drawSkeleton();
+  }
+
+  // 驾驶：掌心 x → 左右平移（±10 大空间），掌心高度 → 爬升/俯冲（±4.5），倾斜额外向外延伸+滚转表现
+  const R = state.right, L = state.left;
+  if (L.xS !== null) {
+    let targetX = (L.xS - 0.5) * 20;
+    if (L.bankS !== null) targetX += (L.bankS / 60) * 4;   // 压坡度横向延伸
+    targetX = THREE.MathUtils.clamp(targetX, -12, 12);
+    plane.position.x += (targetX - plane.position.x) * 0.25;
+  }
+  if (L.yS !== null) {
+    const targetY = (0.5 - L.yS) * 9;
+    // 俯仰视觉：向上修正时抬头，向下修正时低头
+    plane.rotation.x = THREE.MathUtils.clamp((targetY - plane.position.y) * 0.12, -0.45, 0.45);
+    plane.position.y += (targetY - plane.position.y) * 0.25;
+  }
+  if (L.bankS !== null) plane.rotation.z = THREE.MathUtils.degToRad(-L.bankS);
+
+  // 相机视差：小比例跟随机身（18% 横移 / 15% 升降），帧率无关平滑
+  {
+    const kCam = 1 - Math.exp(-dt * 4);
+    camera3.position.x += (plane.position.x * 0.18 - camera3.position.x) * kCam;
+    camera3.position.y += (1.5 + plane.position.y * 0.15 - camera3.position.y) * kCam;
+  }
+  camera3.updateMatrixWorld();
+
+  // 准星 = 左手大调（锚点跟随机身）+ 右手微调（校准偏移，小圈范围）
+  // 瞄点世界位置：机身正前方 z=-58 平面上，基准随 plane.x/y 走，右手偏移叠加 ±9 单位
+  {
+    const dzf = v => Math.abs(v) < 0.12 ? 0 : v - Math.sign(v) * 0.12;
+    const fdx = THREE.MathUtils.clamp(dzf(state.right.dx / 0.145), -1, 1);
+    const fdy = THREE.MathUtils.clamp(dzf(-state.right.dy / 0.145), -1, 1);   // 画面 y 向下为正，取负号使手上抬=准星上移
+    state.aimWorld.set(
+      plane.position.x + fdx * 9,
+      plane.position.y + fdy * 9,
+      -58
+    );
+    const proj = state.aimWorld.clone().project(camera3);
+    const sx = THREE.MathUtils.clamp((proj.x + 1) / 2, 0.03, 0.97);
+    const sy = THREE.MathUtils.clamp((1 - proj.y) / 2, 0.04, 0.96);
+    cross.style.left = (sx * 100) + "%";
+    cross.style.top = (sy * 100) + "%";
+  }
+
+  // 武器边缘/持续逻辑
+  const rocketNow = state.running && (R.gest === "Pointing_Up" || R.gun);
+  const fistNow = state.running && R.gest === "Closed_Fist";
+  const ultNow = state.running && R.gest === "ILoveYou";
+  const missileNow = state.running && R.gest === "Victory";
+
+  if (rocketNow && !weapons.rocketHeld) fireRocket();
+  weapons.rocketHeld = rocketNow;
+  if (fistNow) {
+    if (t >= weapons.mgNext) { fireMG(); weapons.mgNext = t + 110; }
+  } else weapons.mgNext = 0;
+  if (ultNow && !weapons.ultHeld && t - weapons.ultLast > 5000) { doUlt(); weapons.ultLast = t; }
+  weapons.ultHeld = ultNow;
+
+  let lockPct = 0;
+  const lockOn = missileNow && performance.now() - R.seenT < 300;
+  if (lockOn) {
+    // 目标被摧毁/飞走 → 锁定丢失，按定版规则重置蓄力
+    if (weapons.chargeTarget && !enemies.includes(weapons.chargeTarget)) {
+      weapons.chargeStart = null;
+      weapons.chargeTarget = null;
+    }
+    if (weapons.chargeStart == null) weapons.chargeStart = t;
+    // 空手抓目标：锁定最近的靶机
+    if (!weapons.chargeTarget && enemies.length) {
+      // 锁定离准星瞄点最近的靶机（准星套谁就锁谁）
+      let best = null, bd = 1e9;
+      for (const e of enemies) {
+        const d = e.position.distanceTo(state.aimWorld);
+        if (d < bd) { bd = d; best = e; }
+      }
+      weapons.chargeTarget = best;
+    }
+    // 锁定准星跟随目标
+    reticle.visible = !!weapons.chargeTarget;
+    if (weapons.chargeTarget) reticle.position.copy(weapons.chargeTarget.position);
+    const held = t - weapons.chargeStart;
+    if (held >= MISSILE_CHARGE_MS) {
+      if (!weapons.firedAt) { weapons.firedAt = t; launchMissile(weapons.chargeTarget); }
+      lockPct = 100;
+    } else lockPct = held / MISSILE_CHARGE_MS * 100;
+  } else {
+    weapons.chargeStart = null; weapons.chargeTarget = null; weapons.firedAt = null;
+    reticle.visible = false;
+  }
+  $("lockTrack").style.display = lockOn ? "block" : "none";
+  $("lockFill").style.width = lockPct + "%";
+
+  const ws = $("wstate");
+  if (ultNow) { ws.textContent = "💥 大招！"; ws.className = "fire"; }
+  else if (lockOn) { ws.textContent = lockPct >= 100 ? "💥 导弹已发射！" : "🎯 导弹锁定中 " + ((t - weapons.chargeStart) / 1000).toFixed(1) + "s / 1.5s"; ws.className = "fire"; }
+  else if (rocketNow) { ws.textContent = "🚀 火箭弹"; ws.className = "fire"; }
+  else if (fistNow) { ws.textContent = "🔫 机枪开火中"; ws.className = "fire"; }
+  else { ws.textContent = "空仓挂机"; ws.className = ""; }
+
+  // 油门：左手展开度 → 0~1（完全握拳=0 速停住，完全展开=极速）
+  let throttle = 1;
+  if (L.openS !== null) throttle = THREE.MathUtils.clamp((L.openS - 1.1) / (1.9 - 1.1), 0, 1);
+  $("spd").textContent = Math.round(throttle * 100) + "%";
+  const worldSpeed = 12 * throttle;
+
+  // 靶机
+  if (state.running && t > nextSpawn && enemies.length < 6) { spawnEnemy(); nextSpawn = t + 1100; }
+  for (const e of [...enemies]) {
+    e.position.z += worldSpeed * dt;
+    e.rotation.x += dt; e.rotation.y += dt * 0.7;
+    if (e.position.z > 6) { scene.remove(e); enemies.splice(enemies.indexOf(e), 1); }
+  }
+  // 子弹（朝准星瞄点方向飞行）
+  for (const b of [...bullets]) {
+    b.position.addScaledVector(b.userData.dir, 45 * dt);
+    if (b.position.distanceTo(plane.position) > 130) { scene.remove(b); bullets.splice(bullets.indexOf(b), 1); continue; }
+    for (const e of [...enemies]) {
+      if (b.position.distanceTo(e.position) < 0.95) {
+        scene.remove(b); bullets.splice(bullets.indexOf(b), 1);
+        killEnemy(e, 1); break;
+      }
+    }
+  }
+  // 火箭弹（直射，朝准星瞄点方向）
+  for (const r of [...rockets]) {
+    r.position.addScaledVector(r.userData.dir, 30 * dt);
+    if (r.position.distanceTo(plane.position) > 130) { scene.remove(r); rockets.splice(rockets.indexOf(r), 1); continue; }
+    for (const e of [...enemies]) {
+      if (r.position.distanceTo(e.position) < 1.4) {
+        scene.remove(r); rockets.splice(rockets.indexOf(r), 1);
+        killEnemy(e, 2); break;
+      }
+    }
+  }
+  // 追踪导弹（纯追踪）
+  for (const m of [...missiles]) {
+    const tg = m.userData.target;
+    if (tg && enemies.includes(tg)) {
+      m.userData.dir.copy(tg.position).sub(m.position).normalize();
+    }
+    m.position.addScaledVector(m.userData.dir, 26 * dt);
+    if (m.position.distanceTo(plane.position) > 150) { scene.remove(m); missiles.splice(missiles.indexOf(m), 1); continue; }
+    for (const e of [...enemies]) {
+      if (m.position.distanceTo(e.position) < 1.3) {
+        scene.remove(m); missiles.splice(missiles.indexOf(m), 1);
+        killEnemy(e, 3); break;
+      }
+    }
+  }
+  // 击杀动画（缩小消失）
+  for (const d of [...deaths]) {
+    d.t += dt;
+    if (d.t > 0.15) { scene.remove(d.m); deaths.splice(deaths.indexOf(d), 1); continue; }
+    d.m.scale.setScalar(1 - d.t / 0.15);
+  }
+
+  renderer.render(scene, camera3);
+}
+requestAnimationFrame(loop);
+
+function drawSkeleton() {
+  const w = pip.width, h = pip.height;
+  for (const { label, lm } of state.frameHands) {
+    const color = label === "Left" ? "#35e0ff" : "#ff9f43";
+    const P = j => ({ x: lm[j].x * w, y: lm[j].y * h });
+    const p5 = P(5), p17 = P(17);
+    pctx.strokeStyle = "rgba(255,255,255,.85)"; pctx.lineWidth = 3.5;
+    pctx.beginPath(); pctx.moveTo(p5.x, p5.y); pctx.lineTo(p17.x, p17.y); pctx.stroke();
+    pctx.strokeStyle = color; pctx.lineWidth = 2;
+    pctx.beginPath();
+    for (const [a, b] of HAND_CONNECTIONS) { const pa = P(a), pb = P(b); pctx.moveTo(pa.x, pa.y); pctx.lineTo(pb.x, pb.y); }
+    pctx.stroke();
+    pctx.fillStyle = color;
+    for (let j = 0; j < lm.length; j++) { const p = P(j); pctx.beginPath(); pctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2); pctx.fill(); }
+    const w0 = P(0);
+    pctx.font = "bold 16px Consolas";
+    pctx.fillText(label === "Left" ? "左手" : "右手", w0.x - 18, w0.y + 28);
+  }
+}
+</script>
+</body>
+</html>

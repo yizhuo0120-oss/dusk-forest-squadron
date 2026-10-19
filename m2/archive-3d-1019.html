@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>M2 存档 · 3D 自由飞行 v1（1019：云台防抖+油门档位+准星+头部平移）</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+  body { font-family: Consolas, "Microsoft YaHei", monospace; color: #d7e2ee; }
+  canvas.game { position: fixed; inset: 0; display: block; }
+
+  #hud {
+    position: fixed; top: 12px; left: 14px; z-index: 10;
+    font-size: 14px; line-height: 1.7; text-shadow: 0 1px 2px #000;
+  }
+  #wstate { font-size: 18px; font-weight: 700; color: #35e0ff; }
+  #wstate.fire { color: #ff9f43; }
+  #lockTrack { width: 180px; height: 8px; background: #222; margin-top: 4px; display: none; }
+  #lockFill { display: block; height: 100%; width: 0%; background: linear-gradient(90deg,#ff9f43,#ff5d5d); }
+  #tip { color: #6b7a8d; font-size: 12px; margin-top: 8px; }
+
+  #pip { position: fixed; left: 14px; bottom: 14px; width: 240px; z-index: 10; border: 1px solid #333; border-radius: 4px; }
+
+  /* 中央十字准星：屏幕中心 = 弹道汇聚点 */
+  #crosshair { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 46px; height: 46px; z-index: 9; pointer-events: none; }
+  #crosshair b { position: absolute; background: #35e0ff; box-shadow: 0 0 5px #35e0ff; }
+  #crosshair b:nth-child(1) { left: 50%; top: 0; width: 2px; height: 13px; transform: translateX(-50%); }
+  #crosshair b:nth-child(2) { left: 50%; bottom: 0; width: 2px; height: 13px; transform: translateX(-50%); }
+  #crosshair b:nth-child(3) { top: 50%; left: 0; height: 2px; width: 13px; transform: translateY(-50%); }
+  #crosshair b:nth-child(4) { top: 50%; right: 0; height: 2px; width: 13px; transform: translateY(-50%); }
+  #crosshair i { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; background: #ff9f43; border-radius: 50%; transform: translate(-50%, -50%); }
+
+  #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .5s; z-index: 20; }
+
+  #boot {
+    position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.92);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    text-align: center;
+  }
+  #boot h2 { font-size: 17px; }
+  #boot p { font-size: 13px; color: #6b7a8d; line-height: 1.9; }
+  #startBtn {
+    background: #35e0ff; color: #04222b; border: none; cursor: pointer;
+    font-size: 15px; font-weight: 700; padding: 12px 36px; border-radius: 6px; font-family: inherit;
+  }
+  #startBtn:disabled { opacity: .4; cursor: wait; }
+  #bootMsg { font-size: 13px; color: #35e0ff; min-height: 18px; }
+</style>
+</head>
+<body>
+
+<script>
+  window.addEventListener("error", function (ev) {
+    var m = document.getElementById("bootMsg");
+    if (m) { m.style.color = "#ff5d5d"; m.textContent = "脚本错误: " + ((ev.error && ev.error.message) || ev.message || ev.type); }
+  });
+  window.addEventListener("unhandledrejection", function (ev) {
+    var m = document.getElementById("bootMsg");
+    if (m) { m.style.color = "#ff5d5d"; m.textContent = "异步错误: " + ((ev.reason && ev.reason.message) || ev.reason); }
+  });
+</script>
+
+<div id="hud">
+  <div>得分 <b id="score">0</b></div>
+  <div>速度 <b id="spd">--</b></div>
+  <div>头部 <b id="headPos">--</b></div>
+  <div id="wstate">空仓挂机</div>
+  <div id="lockTrack"><i id="lockFill"></i></div>
+  <div id="tip">左手：左右偏=转向 · 前倾=俯冲 · 后仰=爬升 · 左右倾=持续滚转（回正停） · 开合=油门0-5档（拳=0停） ｜ 头部：左右/上下移动=平移微调（自动校准） ｜ 右手：张掌=保险 握拳=机枪 手枪=火箭弹 比耶=导弹锁定1.5s 爱你=大招</div>
+</div>
+<canvas id="pip"></canvas>
+<div id="crosshair"><b></b><b></b><b></b><b></b><i></i></div>
+<div id="flash"></div>
+
+<div id="boot">
+  <h2>M2 · 3D 自由飞行 · 手势驾驶验证</h2>
+  <p>
+    机身固定在屏幕左下角，中央准星=弹道——转动的是整个世界（防晕设计）<br>
+    左手摇杆：左右偏=转向 · 手掌前倾=俯冲 · 后仰=抬机头 · 左右倾=滚转 · 开合=油门档位（拳=0停）<br>
+    <b>头部=平移微调</b>：启动后正对摄像头静止半秒完成校准，之后头左右/上下移动 = 飞机左右/上下平移<br>
+    红色方块=靶机（静止在空间中，飞过去打）· 无碰撞伤害
+  </p>
+  <button id="startBtn">开启摄像头</button>
+  <div id="bootMsg"></div>
+</div>
+
+<script type="module">
+const LIB_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task";
+const FACE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+
+const HAND_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]
+];
+const SMOOTH = 0.25, DEBOUNCE_N = 2;   // 滤波偏强：稳优先，牺牲少量响应速度
+const $ = id => document.getElementById(id);
+
+const state = {
+  running: false,
+  left:  { bankS: null, xS: null, yS: null, openS: null, pitchS: null, gear: null, buf: [], gest: "None" },
+  right: { buf: [], gest: "None", gun: false, seenT: 0 },
+  face:  { cal: null, sumX: 0, sumY: 0, n: 0, x: 0, y: 0, has: false },
+  frameHands: [], handCountNow: 0, lastVideoTime: -1, lastHandT: 0
+};
+
+// ===== 双手身份跟踪（M1 已验证方案）=====
+const track = { slots: { left: null, right: null } };
+const HOLD_MS = 250, MATCH_DIST = 0.30;
+
+function isGunPose(lm) {
+  const scale = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y) || 1e-6;
+  const d = (a, b) => Math.hypot(lm[a].x - lm[b].x, lm[a].y - lm[b].y);
+  const idxExt = d(8, 0) / scale, midExt = d(12, 0) / scale;
+  return idxExt > 1.1 && midExt < idxExt * 0.75 &&
+    d(12, 9) / scale < 0.9 && d(16, 13) / scale < 0.9 && d(20, 17) / scale < 0.9;
+}
+
+function associate(res, now) {
+  const hands = res.handedness || res.handednesses || [];
+  const dets = [];
+  for (let i = 0; i < hands.length; i++) {
+    const lm = res.landmarks[i];
+    if (!lm) continue;
+    const reported = hands[i]?.[0]?.categoryName;
+    const reportedLabel = reported === "Left" ? "Right" : reported === "Right" ? "Left" : reported; // 实测需翻转
+    const g = res.gestures?.[i]?.[0];
+    dets.push({ lm, reportedLabel, x: lm[0].x, y: lm[0].y, gest: g ? g.categoryName : "None", gun: isGunPose(lm) });
+  }
+  state.handCountNow = dets.length;
+  const result = [], used = new Set(), cand = [];
+  for (const side of ["left", "right"]) {
+    const s = track.slots[side];
+    if (!s) continue;
+    if (now - s.lastT > HOLD_MS) { track.slots[side] = null; continue; }
+    dets.forEach((d, di) => {
+      if (!used.has(di)) {
+        const dist = Math.hypot(d.x - s.x, d.y - s.y);
+        if (dist < MATCH_DIST) cand.push({ side, di, dist });
+      }
+    });
+  }
+  cand.sort((a, b) => a.dist - b.dist);
+  for (const c of cand) {
+    if (used.has(c.di) || !track.slots[c.side]) continue;
+    used.add(c.di);
+    const d = dets[c.di];
+    track.slots[c.side] = { x: d.x, y: d.y, lastT: now };
+    result.push({ label: c.side === "left" ? "Left" : "Right", lm: d.lm, gest: d.gest, gun: d.gun });
+  }
+  for (let di = 0; di < dets.length; di++) {
+    if (used.has(di)) continue;
+    const d = dets[di];
+    let side = d.x < 0.42 ? "left" : d.x > 0.58 ? "right" : d.reportedLabel;
+    if (result.some(r => r.label === (side === "left" ? "Left" : "Right"))) {
+      const other = side === "left" ? "Right" : "Left";
+      if (!result.some(r => r.label === other)) side = other === "Right" ? "right" : "left";
+    }
+    track.slots[side] = { x: d.x, y: d.y, lastT: now };
+    result.push({ label: side === "left" ? "Left" : "Right", lm: d.lm, gest: d.gest, gun: d.gun });
+  }
+  return result;
+}
+
+function process(res, now) {
+  state.frameHands = associate(res, now);
+  for (const { label, lm, gest, gun } of state.frameHands) {
+    const slot = label === "Left" ? state.left : state.right;
+    slot.buf.push(gest);
+    if (slot.buf.length > DEBOUNCE_N) slot.buf.shift();
+    if (slot.buf.length === DEBOUNCE_N && slot.buf.every(x => x === slot.buf[0]) && slot.buf[0] !== slot.gest) {
+      slot.gest = slot.buf[0];
+    }
+    if (label === "Left") {
+      const p5 = lm[5], p17 = lm[17];
+      let deg = Math.atan2(p5.y - p17.y, p5.x - p17.x) * 180 / Math.PI;
+      if (deg > 90) deg -= 180;
+      if (deg < -90) deg += 180;
+      state.left.bankS = state.left.bankS === null ? deg : state.left.bankS + (deg - state.left.bankS) * SMOOTH;
+      const x = lm[9].x, y = lm[9].y;
+      state.left.xS = state.left.xS === null ? x : state.left.xS + (x - state.left.xS) * SMOOTH;
+      state.left.yS = state.left.yS === null ? y : state.left.yS + (y - state.left.yS) * SMOOTH;
+      // 油门开合度：四指尖到腕距离 ÷ 手掌尺度（全开≈1.9，握拳≈1.0）
+      const dW = j => Math.hypot(lm[j].x - lm[0].x, lm[j].y - lm[0].y);
+      const scale = Math.hypot(lm[9].x - lm[0].x, lm[9].y - lm[0].y) || 1e-6;
+      const open = (dW(8) + dW(12) + dW(16) + dW(20)) / (4 * scale);
+      state.left.openS = state.left.openS === null ? open : state.left.openS + (open - state.left.openS) * 0.25;
+      // 手掌前后倾（俯仰）：腕→中指根向量的深度/高度比（实测取正号：前倾=俯冲，后仰=拉起）
+      const pit = Math.atan2(lm[9].z - lm[0].z, -(lm[9].y - lm[0].y));
+      state.left.pitchS = state.left.pitchS === null ? pit : state.left.pitchS + (pit - state.left.pitchS) * 0.15;
+    } else {
+      state.right.gun = gun;
+      state.right.seenT = now;
+    }
+  }
+  if (state.frameHands.length > 0) state.lastHandT = now;
+}
+
+// ===== 头部追踪：鼻尖偏移 → 平移微调（前 15 帧自动校准中心）=====
+function processFace(res, now) {
+  const F = state.face;
+  const lm = res.faceLandmarks && res.faceLandmarks[0];
+  if (!lm) { F.has = false; return; }
+  const nx = lm[1].x, ny = lm[1].y;   // 鼻尖
+  if (!F.cal) {
+    F.sumX += nx; F.sumY += ny; F.n++;
+    if (F.n >= 15) F.cal = { x: F.sumX / F.n, y: F.sumY / F.n };  // 累计约半秒后锁定中心
+    return;
+  }
+  F.x += ((nx - F.cal.x) - F.x) * 0.2;
+  F.y += ((ny - F.cal.y) - F.y) * 0.2;
+  F.has = true;
+}
+
+// ===== Three.js：机身固定、世界转动的渲染架构 =====
+const THREE = await import("https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js");
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x14283f, 150, 700);
+// 相机永远固定不动（终极防抖）
+const camera3 = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 1500);
+camera3.position.set(0, 2.0, 6.4);
+camera3.up.set(0, 1, 0);
+camera3.lookAt(0, 0.9, -30);
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+renderer.setSize(innerWidth, innerHeight);
+renderer.domElement.className = "game";
+document.body.prepend(renderer.domElement);
+addEventListener("resize", () => {
+  camera3.aspect = innerWidth / innerHeight;
+  camera3.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// 世界组：所有"空间内"的东西都在这里，每帧施加飞机逻辑姿态的逆变换
+// → 屏幕上机身永远固定（机背朝上、机头朝前），转动的是世界
+const world = new THREE.Group();
+scene.add(world);
+
+// 星空参照物
+const STAR_N = 900, STAR_R = 130;
+const starPos = new Float32Array(STAR_N * 3);
+for (let i = 0; i < STAR_N * 3; i++) starPos[i] = (Math.random() - 0.5) * STAR_R * 2;
+const starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
+const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0x8fa3bd, size: 0.9 }));
+world.add(stars);
+
+// 渐变天空穹顶（相机不动 → 天空也永远不用动）
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(1000, 24, 12),
+  new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false,
+    uniforms: {
+      top: { value: new THREE.Color(0x05080f) },
+      mid: { value: new THREE.Color(0x14283f) },
+      bot: { value: new THREE.Color(0x2a4a6a) }
+    },
+    vertexShader: `varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `
+      varying vec3 vP; uniform vec3 top; uniform vec3 mid; uniform vec3 bot;
+      void main(){
+        float h = normalize(vP).y;
+        vec3 c = h > 0.0 ? mix(mid, top, pow(h, 0.7)) : mix(mid, bot, pow(-h, 0.5));
+        gl_FragColor = vec4(c, 1.0);
+      }`
+  })
+);
+world.add(sky);
+
+// 无限地面：网格线锚定世界坐标 + 底板
+const GRID_CELL = 10;
+const grid = new THREE.GridHelper(2000, 200, 0x3a6a9a, 0x1d3a52);
+grid.material.transparent = true;
+grid.material.opacity = 0.55;
+world.add(grid);
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0x0a1420 })
+);
+ground.position.y = -0.4;
+world.add(ground);
+
+// 逻辑飞机：只承载姿态（驱动机头方向与世界逆变换），不渲染、不入场景
+const plane = new THREE.Object3D();
+plane.rotation.order = "YXZ";   // 偏航→俯仰→滚转（滚转在机身坐标系）
+
+// 视觉飞机：固定在屏幕左下角，机背朝上、机头朝前，永不旋转
+const planeView = new THREE.Group();
+{
+  const body = new THREE.Mesh(
+    new THREE.ConeGeometry(0.55, 1.8, 4).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0x35e0ff })
+  );
+  planeView.add(body);
+  const trimMat = new THREE.MeshBasicMaterial({ color: 0xe8f4ff });
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.55, 0.5), trimMat);   // 垂直尾翼
+  fin.position.set(0, 0.28, 0.65);
+  planeView.add(fin);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.07, 0.55), trimMat);  // 主翼
+  wing.position.set(0, -0.05, 0.35);
+  planeView.add(wing);
+}
+// 钉在相机空间的左下角（相机固定，只需换算一次）；z=-6.6 即机身所在深度
+camera3.updateMatrixWorld();
+planeView.position.set(-3.4, -0.7, -6.6).applyMatrix4(camera3.matrixWorld);
+scene.add(planeView);   // 视觉机在场景层，不在 world 组 —— 屏幕上绝对不动
+
+// 弹道与机身偏移参数：准星(屏幕中心) = 逻辑机头前方 AIM_DEPTH 处
+const AIM_DEPTH = 45;
+const OFF_BODY = new THREE.Vector3(3.4, 0.7, 6.6);   // 逻辑机身在云台坐标系里的偏移（左下 = -该向量的视口投影）
+
+// 逻辑状态：飞机在世界空间中的真实位置与姿态（驱动世界逆变换）
+const planePos = new THREE.Vector3(0, 3, 0);
+const invQuat = new THREE.Quaternion();
+// 云台层（大疆式防抖）：渲染世界用的"云台姿态"慢速追踪逻辑姿态，
+// 高频手部噪声被吸收，只有持续的转向/俯仰才转得动世界
+const gimbalQuat = new THREE.Quaternion();
+const gimbalPos = new THREE.Vector3(0, 3, 0);
+
+const enemyGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9);
+const enemyMat = new THREE.MeshBasicMaterial({ color: 0xff4444 });
+const bulletGeo = new THREE.SphereGeometry(0.12, 6, 6);
+const bulletMat = new THREE.MeshBasicMaterial({ color: 0xffe066 });
+const rocketGeo = new THREE.ConeGeometry(0.28, 1.1, 6).rotateX(-Math.PI / 2);
+const rocketMat = new THREE.MeshBasicMaterial({ color: 0xff8c00 });
+const missileGeo = new THREE.SphereGeometry(0.3, 8, 8);
+const missileMat = new THREE.MeshBasicMaterial({ color: 0xff4fd8 });
+// 锁定准星
+const reticle = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(1.5, 1.5, 1.5)),
+  new THREE.LineBasicMaterial({ color: 0xff4fd8 })
+);
+reticle.visible = false;
+world.add(reticle);
+
+const enemies = [], bullets = [], rockets = [], missiles = [], deaths = [];
+let score = 0, nextSpawn = 0;
+
+const V_FWD = new THREE.Vector3(0, 0, -1);
+const fwdVec = new THREE.Vector3(0, 0, -1);
+
+function spawnEnemy() {
+  const m = new THREE.Mesh(enemyGeo, enemyMat);
+  const side = new THREE.Vector3(1, 0, 0).applyQuaternion(plane.quaternion);
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(plane.quaternion);
+  m.position.copy(planePos)
+    .addScaledVector(fwdVec, 55 + Math.random() * 45)
+    .addScaledVector(side, (Math.random() - 0.5) * 60)
+    .addScaledVector(up, (Math.random() - 0.5) * 50);
+  world.add(m); enemies.push(m);
+}
+function killEnemy(m, pts) {
+  world.remove(m);
+  enemies.splice(enemies.indexOf(m), 1);
+  deaths.push({ m, t: 0 });
+  score += pts;
+  $("score").textContent = score;
+}
+
+// ===== 武器 =====
+const weapons = { mgNext: 0, rocketHeld: false, ultHeld: false, ultLast: -9999, chargeStart: null, firedAt: null, chargeTarget: null };
+const MISSILE_CHARGE_MS = 1500;
+
+function fireMG() {
+  const b = new THREE.Mesh(bulletGeo, bulletMat);
+  const muzzle = planePos.clone().addScaledVector(fwdVec, 1.2);
+  b.position.copy(muzzle);
+  // 从机身射向准星（机头前方 AIM_DEPTH 处汇聚）
+  b.userData.dir = planePos.clone().addScaledVector(fwdVec, AIM_DEPTH).sub(muzzle).normalize();
+  world.add(b); bullets.push(b);
+}
+function fireRocket() {
+  const r = new THREE.Mesh(rocketGeo, rocketMat);
+  const muzzle = planePos.clone().addScaledVector(fwdVec, 1.5);
+  r.position.copy(muzzle);
+  r.userData.dir = planePos.clone().addScaledVector(fwdVec, AIM_DEPTH).sub(muzzle).normalize();
+  r.quaternion.setFromUnitVectors(V_FWD, r.userData.dir);
+  world.add(r); rockets.push(r);
+}
+function launchMissile(target) {
+  const m = new THREE.Mesh(missileGeo, missileMat);
+  m.position.copy(planePos).addScaledVector(fwdVec, 1.5);
+  m.userData.dir = fwdVec.clone();
+  m.userData.target = target || null;
+  if (!m.userData.target) {
+    let best = null, bd = 1e9;
+    for (const e of enemies) {
+      const d = e.position.distanceTo(planePos);
+      if (d < bd) { bd = d; best = e; }
+    }
+    m.userData.target = best;
+  }
+  world.add(m); missiles.push(m);
+}
+function doUlt() {
+  $("flash").style.transition = "none";
+  $("flash").style.opacity = "0.85";
+  requestAnimationFrame(() => { $("flash").style.transition = "opacity .5s"; $("flash").style.opacity = "0"; });
+  for (const e of [...enemies]) killEnemy(e, 1);
+}
+
+// ===== 启动 =====
+const video = document.createElement("video");
+video.setAttribute("playsinline", ""); video.muted = true;
+const pip = $("pip"), pctx = pip.getContext("2d");
+// 识别用降采样画布：识别帧率更高，手势更灵敏（显示仍用全分辨率 pip）
+const det = document.createElement("canvas");
+const dctx = det.getContext("2d");
+// 人脸模型单独一张画布：tasks-vision 多模型并行时同帧共用同一 canvas 会导致后跑的模型拿空纹理
+const detFace = document.createElement("canvas");
+const dctxFace = detFace.getContext("2d");
+let recognizer = null, faceLandmarker = null;
+
+$("startBtn").addEventListener("click", start);
+
+async function start() {
+  const btn = $("startBtn"), msg = $("bootMsg");
+  btn.disabled = true;
+  try {
+    msg.style.color = "";
+    msg.textContent = "① 加载识别库与 3D 库…";
+    const lib = await import(LIB_URL);
+    msg.textContent = "② 请求摄像头权限…";
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }, audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+    msg.textContent = "③ 加载手势模型（约 8MB）…";
+    const vision = await lib.FilesetResolver.forVisionTasks(WASM_URL);
+    try {
+      recognizer = await lib.GestureRecognizer.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" }, runningMode: "VIDEO", numHands: 2
+      });
+    } catch (e) {
+      recognizer = await lib.GestureRecognizer.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" }, runningMode: "VIDEO", numHands: 2
+      });
+    }
+    msg.textContent = "④ 加载头部追踪模型…";
+    try {
+      faceLandmarker = await lib.FaceLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate: "GPU" }, runningMode: "VIDEO", numFaces: 1
+      });
+    } catch (e) {
+      faceLandmarker = await lib.FaceLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate: "CPU" }, runningMode: "VIDEO", numFaces: 1
+      });
+    }
+    pip.width = video.videoWidth; pip.height = video.videoHeight;
+    det.width = 640; det.height = Math.round(640 * video.videoHeight / video.videoWidth);
+    detFace.width = det.width; detFace.height = det.height;
+    for (let i = 0; i < 4; i++) spawnEnemy();
+    $("boot").style.display = "none";
+    state.running = true;
+    state.lastHandT = performance.now();
+  } catch (err) {
+    msg.textContent = "";
+    $("bootMsg").style.color = "#ff5d5d";
+    $("bootMsg").textContent = err.name === "NotAllowedError"
+      ? "摄像头权限被拒绝 — 地址栏允许后刷新"
+      : err.name === "NotReadableError"
+        ? "摄像头被占用 — 关掉 M1 页面/TouchDesigner 再刷新"
+        : "启动失败: " + err.message;
+    btn.disabled = false;
+  }
+}
+
+// ===== 主循环 =====
+let lastT = 0;
+const DEAD = 0.12;          // 摇杆死区
+const YAW_RATE = 0.84;      // 满舵偏航角速度 rad/s（用户要求降敏 30%）
+const PITCH_RATE = 0.7;     // 满舵俯仰角速度 rad/s
+const ROLL_RATE = 1.75;     // 满舵滚转角速度 rad/s（速率式：保持倾斜持续滚，回正停）
+
+function stickOffset(v) {   // 归一化到 [-1,1]，含死区
+  const dx = v - 0.5;
+  const a = Math.abs(dx);
+  if (a <= DEAD) return 0;
+  return Math.sign(dx) * Math.min(1, (a - DEAD) / (0.5 - DEAD));
+}
+
+function loop(t) {
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (t - lastT) / 1000 || 0.016);
+  lastT = t;
+
+  // 视觉步骤
+  if (state.running && video.currentTime !== state.lastVideoTime) {
+    state.lastVideoTime = video.currentTime;
+    const w = pip.width, h = pip.height;
+    pctx.save(); pctx.translate(w, 0); pctx.scale(-1, 1); pctx.drawImage(video, 0, 0, w, h); pctx.restore();
+    dctx.save(); dctx.translate(det.width, 0); dctx.scale(-1, 1); dctx.drawImage(video, 0, 0, det.width, det.height); dctx.restore();
+    dctxFace.save(); dctxFace.translate(detFace.width, 0); dctxFace.scale(-1, 1); dctxFace.drawImage(video, 0, 0, detFace.width, detFace.height); dctxFace.restore();
+    const res = recognizer.recognizeForVideo(det, t);
+    process(res, t);
+    if (faceLandmarker) {
+      try {
+        processFace(faceLandmarker.detectForVideo(detFace, t), t);
+      } catch (e) {
+        state.face.err = (state.face.err || 0) + 1;
+      }
+    }
+    drawSkeleton();
+  }
+
+  const R = state.right, L = state.left;
+
+  // ===== 驾驶（逻辑姿态）：摇杆式全向机动 =====
+  // 油门档位：0-5 档（拳=0 停，全开=5 极速），量化+滞回防档位抖动
+  if (L.openS !== null) {
+    const g = THREE.MathUtils.clamp((L.openS - 1.1) / (1.9 - 1.1) * 5, 0, 5);
+    if (L.gear === null) L.gear = Math.round(g);
+    else if (Math.abs(g - L.gear) >= 0.6) L.gear = Math.round(g);
+  }
+  const gear = L.gear ?? 3;
+  const throttle = gear / 5;
+  $("spd").textContent = gear + " 档 (" + Math.round(throttle * 100) + "%)";
+
+  fwdVec.copy(V_FWD).applyQuaternion(plane.quaternion);
+
+  if (L.xS !== null) {
+    const ox = stickOffset(L.xS);
+    plane.rotation.y += -ox * YAW_RATE * dt;    // 手右偏 → 右转
+  }
+  if (L.pitchS !== null) {
+    // 前倾=俯冲（机头向下），后仰=抬机头；实测取正号；带死区滤掉手部微颤
+    let ps = L.pitchS;
+    if (Math.abs(ps) < 0.07) ps = 0;
+    const pr = THREE.MathUtils.clamp(ps * 2.4, -PITCH_RATE, PITCH_RATE);
+    plane.rotation.x += pr * dt;
+  }
+  // 滚转：速率式——手保持倾斜就持续滚转（可滚整圈），回正（±12°内）即停、保持当前坡度
+  if (L.bankS !== null) {
+    let off = THREE.MathUtils.clamp(L.bankS / 60, -1, 1);   // 倾斜 60° 打满舵
+    if (Math.abs(off) < 0.2) off = 0;                        // ±12° 死区
+    else off -= Math.sign(off) * 0.2;
+    plane.rotation.z += -off * ROLL_RATE * dt;
+  }
+  planePos.addScaledVector(fwdVec, 14 * throttle * dt);
+
+  // 头部平移微调：头左右/上下 → 机身坐标系的侧移/垂直微调
+  // 原始偏移 ±0.145 满行程（灵敏度已 +40%），死区 8%，最大 8 单位/秒；HUD 显示原始值便于诊断
+  if (state.face.has) {
+    const hx = THREE.MathUtils.clamp(state.face.x / 0.145, -1, 1);
+    const hy = THREE.MathUtils.clamp(-state.face.y / 0.145, -1, 1);   // 头抬高（画面 y 变小）= 向上
+    const dz = v => Math.abs(v) < 0.08 ? 0 : v - Math.sign(v) * 0.08;
+    const sx = dz(hx), sy = dz(hy);
+    if (sx || sy) {
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(plane.quaternion);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(plane.quaternion);
+      planePos.addScaledVector(right, sx * 8 * dt);
+      planePos.addScaledVector(up, sy * 8 * dt);
+    }
+    $("headPos").textContent = "原" + (state.face.x >= 0 ? "+" : "") + (state.face.x * 100).toFixed(0)
+      + " / " + (state.face.y >= 0 ? "下" : "上") + Math.abs(state.face.y * 100).toFixed(0)
+      + " ｜ 移 " + (sx >= 0 ? "右" : "左") + Math.abs(sx).toFixed(2) + (sy >= 0 ? "上" : "下") + Math.abs(sy).toFixed(2);
+  } else {
+    const F = state.face;
+    let s = "--";
+    if (F.err) s = "异常×" + F.err;
+    else if (!F.cal) s = F.n > 0 ? "校准中 " + F.n + "/15" : "未检测到脸";
+    $("headPos").textContent = s;
+  }
+
+  // ===== 世界逆变换（经云台层）：机身渲染在左下角，世界平滑转动 =====
+  gimbalQuat.slerp(plane.quaternion, 1 - Math.exp(-dt * 3.0));   // 云台角速度≈3/s
+  gimbalPos.lerp(planePos, 1 - Math.exp(-dt * 4.5));
+  const rigPos = planePos.clone().add(OFF_BODY.clone().applyQuaternion(gimbalQuat));
+  invQuat.copy(gimbalQuat).invert();
+  world.quaternion.copy(invQuat);
+  world.position.copy(rigPos).negate().applyQuaternion(invQuat);
+
+  // 星空环绕（按轴环绕，始终包裹飞机）
+  {
+    const p = starGeo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      for (let a = 0; a < 3; a++) {
+        const idx = i * 3 + a;
+        let v = starPos[idx];
+        const c = a === 0 ? planePos.x : a === 1 ? planePos.y : planePos.z;
+        if (v - c > STAR_R) v -= STAR_R * 2; else if (v - c < -STAR_R) v += STAR_R * 2;
+        starPos[idx] = v;
+      }
+    }
+    p.needsUpdate = true;
+  }
+
+  // 地面网格锚定世界坐标（按格子取整，线不随飞机滑动）
+  grid.position.x = Math.round(planePos.x / GRID_CELL) * GRID_CELL;
+  grid.position.z = Math.round(planePos.z / GRID_CELL) * GRID_CELL;
+  ground.position.x = planePos.x;
+  ground.position.z = planePos.z;
+
+  // ===== 武器逻辑 =====
+  const rocketNow = state.running && (R.gest === "Pointing_Up" || R.gun);
+  const fistNow = state.running && R.gest === "Closed_Fist";
+  const ultNow = state.running && R.gest === "ILoveYou";
+  const missileNow = state.running && R.gest === "Victory";
+
+  if (rocketNow && !weapons.rocketHeld) fireRocket();
+  weapons.rocketHeld = rocketNow;
+  if (fistNow) {
+    if (t >= weapons.mgNext) { fireMG(); weapons.mgNext = t + 110; }
+  } else weapons.mgNext = 0;
+  if (ultNow && !weapons.ultHeld && t - weapons.ultLast > 5000) { doUlt(); weapons.ultLast = t; }
+  weapons.ultHeld = ultNow;
+
+  let lockPct = 0;
+  const lockOn = missileNow && performance.now() - R.seenT < 300;
+  if (lockOn) {
+    if (weapons.chargeTarget && !enemies.includes(weapons.chargeTarget)) {
+      weapons.chargeStart = null;
+      weapons.chargeTarget = null;
+    }
+    if (weapons.chargeStart == null) weapons.chargeStart = t;
+    if (!weapons.chargeTarget && enemies.length) {
+      let best = null, bd = 1e9;
+      for (const e of enemies) {
+        const d = e.position.distanceTo(planePos);
+        if (d < bd) { bd = d; best = e; }
+      }
+      weapons.chargeTarget = best;
+    }
+    reticle.visible = !!weapons.chargeTarget;
+    if (weapons.chargeTarget) reticle.position.copy(weapons.chargeTarget.position);
+    const held = t - weapons.chargeStart;
+    if (held >= MISSILE_CHARGE_MS) {
+      if (!weapons.firedAt) { weapons.firedAt = t; launchMissile(weapons.chargeTarget); }
+      lockPct = 100;
+    } else lockPct = held / MISSILE_CHARGE_MS * 100;
+  } else {
+    weapons.chargeStart = null; weapons.chargeTarget = null; weapons.firedAt = null;
+    reticle.visible = false;
+  }
+  $("lockTrack").style.display = lockOn ? "block" : "none";
+  $("lockFill").style.width = lockPct + "%";
+
+  const ws = $("wstate");
+  if (ultNow) { ws.textContent = "💥 大招！"; ws.className = "fire"; }
+  else if (lockOn) { ws.textContent = lockPct >= 100 ? "💥 导弹已发射！" : "🎯 导弹锁定中 " + ((t - weapons.chargeStart) / 1000).toFixed(1) + "s / 1.5s"; ws.className = "fire"; }
+  else if (rocketNow) { ws.textContent = "🚀 火箭弹"; ws.className = "fire"; }
+  else if (fistNow) { ws.textContent = "🔫 机枪开火中"; ws.className = "fire"; }
+  else { ws.textContent = "空仓挂机"; ws.className = ""; }
+
+  // ===== 实体更新 =====
+  if (state.running && t > nextSpawn && enemies.length < 6) { spawnEnemy(); nextSpawn = t + 1200; }
+  for (const e of [...enemies]) {
+    e.rotation.x += dt; e.rotation.y += dt * 0.7;
+    if (e.position.distanceTo(planePos) > 200) {
+      world.remove(e); enemies.splice(enemies.indexOf(e), 1);
+    }
+  }
+  for (const b of [...bullets]) {
+    b.position.addScaledVector(b.userData.dir, 45 * dt);
+    if (b.position.distanceTo(planePos) > 120) { world.remove(b); bullets.splice(bullets.indexOf(b), 1); continue; }
+    for (const e of [...enemies]) {
+      if (b.position.distanceTo(e.position) < 0.95) {
+        world.remove(b); bullets.splice(bullets.indexOf(b), 1);
+        killEnemy(e, 1); break;
+      }
+    }
+  }
+  for (const r of [...rockets]) {
+    r.position.addScaledVector(r.userData.dir, 30 * dt);
+    if (r.position.distanceTo(planePos) > 120) { world.remove(r); rockets.splice(rockets.indexOf(r), 1); continue; }
+    for (const e of [...enemies]) {
+      if (r.position.distanceTo(e.position) < 1.4) {
+        world.remove(r); rockets.splice(rockets.indexOf(r), 1);
+        killEnemy(e, 2); break;
+      }
+    }
+  }
+  for (const m of [...missiles]) {
+    const tg = m.userData.target;
+    if (tg && enemies.includes(tg)) {
+      m.userData.dir.copy(tg.position).sub(m.position).normalize();
+    }
+    m.position.addScaledVector(m.userData.dir, 26 * dt);
+    if (m.position.distanceTo(planePos) > 150) { world.remove(m); missiles.splice(missiles.indexOf(m), 1); continue; }
+    for (const e of [...enemies]) {
+      if (m.position.distanceTo(e.position) < 1.3) {
+        world.remove(m); missiles.splice(missiles.indexOf(m), 1);
+        killEnemy(e, 3); break;
+      }
+    }
+  }
+  for (const d of [...deaths]) {
+    d.t += dt;
+    if (d.t > 0.15) { world.remove(d.m); deaths.splice(deaths.indexOf(d), 1); continue; }
+    d.m.scale.setScalar(1 - d.t / 0.15);
+  }
+
+  renderer.render(scene, camera3);
+}
+requestAnimationFrame(loop);
+
+function drawSkeleton() {
+  const w = pip.width, h = pip.height;
+  for (const { label, lm } of state.frameHands) {
+    const color = label === "Left" ? "#35e0ff" : "#ff9f43";
+    const P = j => ({ x: lm[j].x * w, y: lm[j].y * h });
+    const p5 = P(5), p17 = P(17);
+    pctx.strokeStyle = "rgba(255,255,255,.85)"; pctx.lineWidth = 3.5;
+    pctx.beginPath(); pctx.moveTo(p5.x, p5.y); pctx.lineTo(p17.x, p17.y); pctx.stroke();
+    pctx.strokeStyle = color; pctx.lineWidth = 2;
+    pctx.beginPath();
+    for (const [a, b] of HAND_CONNECTIONS) { const pa = P(a), pb = P(b); pctx.moveTo(pa.x, pa.y); pctx.lineTo(pb.x, pb.y); }
+    pctx.stroke();
+    pctx.fillStyle = color;
+    for (let j = 0; j < lm.length; j++) { const p = P(j); pctx.beginPath(); pctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2); pctx.fill(); }
+    const w0 = P(0);
+    pctx.font = "bold 16px Consolas";
+    pctx.fillText(label === "Left" ? "左手" : "右手", w0.x - 18, w0.y + 28);
+  }
+}
+</script>
+</body>
+</html>

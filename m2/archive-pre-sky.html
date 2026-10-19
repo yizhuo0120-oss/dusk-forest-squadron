@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>暮林机战 · 手势飞行射击</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0f14; }
+  body { font-family: Consolas, "Microsoft YaHei", monospace; color: #e8dcc8; }
+  canvas.game { position: fixed; inset: 0; display: block; }
+
+  /* 电影感暗角 */
+  #vignette {
+    position: fixed; inset: 0; z-index: 8; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(5, 8, 10, 0.62) 100%);
+  }
+
+  #hud {
+    position: fixed; top: 12px; left: 16px; z-index: 10;
+    font-size: 13px; line-height: 1.75; text-shadow: 0 1px 3px #000;
+  }
+  #hud .val { color: #ffd9a0; }
+  #wstate { font-size: 17px; font-weight: 700; color: #7bdcff; letter-spacing: 1px; }
+  #wstate.fire { color: #ffb35c; }
+  #lockTrack { width: 170px; height: 7px; background: #1a1a1a; margin-top: 4px; display: none; border-radius: 4px; overflow: hidden; }
+  #lockFill { display: block; height: 100%; width: 0%; background: linear-gradient(90deg,#ffb35c,#ff5d3d); }
+
+  #levelBar {
+    position: fixed; top: 14px; right: 18px; z-index: 10; text-align: right;
+    font-size: 13px; line-height: 1.7; text-shadow: 0 1px 3px #000;
+  }
+  #levelName { font-size: 17px; font-weight: 700; color: #ffcf8a; letter-spacing: 2px; }
+
+  /* 关卡横幅 */
+  #banner {
+    position: fixed; left: 50%; top: 32%; transform: translate(-50%, -50%);
+    z-index: 15; text-align: center; pointer-events: none;
+    opacity: 0; transition: opacity 0.6s;
+  }
+  #banner.show { opacity: 1; }
+  #banner .b-level { font-size: 13px; color: #ffb35c; letter-spacing: 6px; margin-bottom: 8px; }
+  #banner .b-name { font-size: 42px; font-weight: 700; color: #ffe9c4; letter-spacing: 10px; text-shadow: 0 0 30px rgba(255, 170, 80, 0.55), 0 2px 6px #000; }
+  #banner .b-sub { font-size: 13px; color: #c9b89a; letter-spacing: 3px; margin-top: 10px; }
+
+  #bossBar {
+    position: fixed; left: 50%; top: 12px; transform: translateX(-50%);
+    width: 320px; z-index: 10; display: none;
+  }
+  #bossBar .bb-label { text-align: center; font-size: 12px; color: #ff9d7a; letter-spacing: 4px; margin-bottom: 4px; text-shadow: 0 1px 3px #000; }
+  #bossBar .bb-track { height: 10px; background: #1a1210; border: 1px solid #5a3a2a; border-radius: 5px; overflow: hidden; }
+  #bossFill { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #ff6b3d, #ff3d2e); transition: width 0.15s; }
+
+  #tip { color: #a89880; font-size: 11px; margin-top: 8px; max-width: 560px; }
+
+  #pip { position: fixed; left: 14px; bottom: 14px; width: 220px; z-index: 10; border: 1px solid #3a3228; border-radius: 6px; opacity: 0.9; }
+
+  #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .5s; z-index: 20; }
+
+  #boot {
+    position: fixed; inset: 0; z-index: 30;
+    background: linear-gradient(180deg, #0b1522 0%, #2e4a5e 60%, #e8a06a 100%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+    text-align: center;
+  }
+  #boot .b-title { font-size: 46px; font-weight: 700; letter-spacing: 14px; color: #ffe9c4; text-shadow: 0 0 40px rgba(255, 170, 80, 0.6); }
+  #boot .b-en { font-size: 12px; color: #ffcf8a; letter-spacing: 6px; margin-top: -8px; }
+  #boot h2 { font-size: 15px; color: #f0e2c8; font-weight: 400; margin-top: 12px; }
+  #boot p { font-size: 13px; color: #d8c9ae; line-height: 2; }
+  #startBtn {
+    background: linear-gradient(180deg, #ffcf8a, #ff9d4d); color: #2a1a0a; border: none; cursor: pointer;
+    font-size: 16px; font-weight: 700; padding: 13px 46px; border-radius: 8px; font-family: inherit;
+    letter-spacing: 4px; box-shadow: 0 0 30px rgba(255, 170, 80, 0.45);
+  }
+  #startBtn:disabled { opacity: .4; cursor: wait; }
+  #bootMsg { font-size: 13px; color: #ffe0b0; min-height: 18px; }
+</style>
+</head>
+<body>
+
+<script>
+  window.addEventListener("error", function (ev) {
+    var m = document.getElementById("bootMsg");
+    if (m) { m.style.color = "#ff8a8a"; m.textContent = "脚本错误: " + ((ev.error && ev.error.message) || ev.message || ev.type); }
+  });
+  window.addEventListener("unhandledrejection", function (ev) {
+    var m = document.getElementById("bootMsg");
+    if (m) { m.style.color = "#ff8a8a"; m.textContent = "异步错误: " + ((ev.reason && ev.reason.message) || ev.reason); }
+  });
+</script>
+
+<div id="vignette"></div>
+<div id="hud">
+  <div>得分 <b id="score" class="val">0</b></div>
+  <div>速度 <b id="spd" class="val">--</b></div>
+  <div>FPS <b id="fps" class="val">--</b></div>
+  <div>机枪 <span class="val">∞</span></div>
+  <div>火箭 <b id="rkAmmo" class="val">10/10</b></div>
+  <div>导弹备弹 <b id="msAmmo" class="val">4/4</b></div>
+  <div>大招 <b id="ultCharge" class="val">0/100</b></div>
+  <div id="wstate">空仓挂机</div>
+  <div id="lockTrack"><i id="lockFill"></i></div>
+  <div id="tip">左手=驾驶（移动+倾斜+油门档） ｜ 右手移动=弹道轨迹线瞄准 ｜ 张掌=保险 ｜ 点赞=机枪 手枪=火箭弹 比耶=导弹 爱你=火力全开（需100分）</div>
+</div>
+<div id="levelBar">
+  <div id="levelName">萤火谷</div>
+  <div>击杀 <b id="levelKill" class="val">0/8</b></div>
+  <div>天色 <b id="dayPhase" class="val">黄昏</b></div>
+</div>
+<div id="banner">
+  <div class="b-level" id="bLayer">第一关</div>
+  <div class="b-name" id="bName">萤火谷</div>
+  <div class="b-sub" id="bSub">暮色渐沉，萤火为灯</div>
+</div>
+<div id="bossBar">
+  <div class="bb-label">血 月 巨 像</div>
+  <div class="bb-track"><i id="bossFill"></i></div>
+</div>
+<canvas id="pip"></canvas>
+<div id="flash"></div>
+
+<div id="boot">
+  <div class="b-title">暮林机战</div>
+  <div class="b-en">DUSK FOREST SQUADRON</div>
+  <h2>五关空域 · 手势飞行射击</h2>
+  <p>
+    左手=驾驶（掌心移动 + 倾斜滚转 + 开合油门） ｜ 右手移动=转动弹道轨迹线瞄准<br>
+    握拳=机枪 ｜ 手枪=火箭弹 ｜ 比耶=追踪导弹 ｜ 爱你=火力全开（击杀攒满100分才能放）<br>
+    穿越萤火谷、双星潮、雾林、失速风暴，迎战血月巨像
+  </p>
+  <button id="startBtn">开启摄像头</button>
+  <div id="bootMsg"></div>
+</div>
+
+<script type="module">
+const LIB_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task";
+
+const HAND_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]
+];
+const SMOOTH = 0.25, DEBOUNCE_N = 2;
+const $ = id => document.getElementById(id);
+
+const state = {
+  running: false,
+  left:  { bankS: null, xS: null, yS: null, openS: null, buf: [], gest: "None" },
+  right: { buf: [], gest: "None", gun: false, seenT: 0, dx: 0, dy: 0 },
+  rcal: { done: false, cx: 0, cy: 0, sumX: 0, sumY: 0, n: 0 },
+  frameHands: [], handCountNow: 0, lastVideoTime: -1, lastHandT: 0
+};
+
+// ===== 关卡设计 =====
+const LEVELS = [
+  { name: "萤火谷", en: "FIREFLY VALLEY", sub: "暮色渐沉，萤火为灯", quota: 8,  spawnMs: 1400, types: ["basic"],                 speed: 1.0 },
+  { name: "双星潮", en: "TWIN TIDE",      sub: "双流交叉，追星逐月", quota: 10, spawnMs: 1150, types: ["basic", "zigzag"],        speed: 1.15 },
+  { name: "雾林哨戒", en: "MIST WARDEN",  sub: "雾锁林深，甲光如铁", quota: 10, spawnMs: 1500, types: ["shield", "basic"],        speed: 0.95 },
+  { name: "失速风暴", en: "STALL STORM",  sub: "湍流骤起，勿失其速", quota: 12, spawnMs: 950,  types: ["zigzag", "pulse"],        speed: 1.3 },
+  { name: "灯火山口", en: "LANTERN CRATER", sub: "血月当空，巨像临世", quota: 1, spawnMs: 1700, types: ["boss", "basic"],          speed: 0.9 }
+];
+const LAYER_ZH = ["第一关", "第二关", "第三关", "第四关", "第五关"];
+
+// 敌人类型：血量 / 体型 / 颜色 / 分值 / 行为
+const ENEMY_TYPES = {
+  basic:  { hp: 1,  size: 0.8,  color: 0xff6b4a, pts: 2,  speed: 1.0 },
+  zigzag: { hp: 1,  size: 0.65, color: 0xffd166, pts: 3,  speed: 1.15, zig: 4.5 },
+  shield: { hp: 2,  size: 0.85, color: 0xff4f8b, pts: 4,  speed: 0.8,  shield: true },
+  pulse:  { hp: 1,  size: 0.7,  color: 0x7bdff2, pts: 3,  speed: 1.0,  pulse: true },
+  boss:   { hp: 20, size: 2.4,  color: 0xff3d2e, pts: 25, speed: 0.45, boss: true }
+};
+
+// ===== 双手身份跟踪（M1 已验证方案）=====
+const track = { slots: { left: null, right: null } };
+const HOLD_MS = 250, MATCH_DIST = 0.30;
+
+function isGunPose(lm) {
+  const scale = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y) || 1e-6;
+  const d = (a, b) => Math.hypot(lm[a].x - lm[b].x, lm[a].y - lm[b].y);
+  const idxExt = d(8, 0) / scale, midExt = d(12, 0) / scale;
+  return idxExt > 1.1 && midExt < idxExt * 0.75 &&
+    d(12, 9) / scale < 0.9 && d(16, 13) / scale < 0.9 && d(20, 17) / scale < 0.9;
+}
+
+function associate(res, now) {
+  const hands = res.handedness || res.handednesses || [];
+  const dets = [];
+  for (let i = 0; i < hands.length; i++) {
+    const lm = res.landmarks[i];
+    if (!lm) continue;
+    const reported = hands[i]?.[0]?.categoryName;
+    const reportedLabel = reported === "Left" ? "Right" : reported === "Right" ? "Left" : reported;
+    const g = res.gestures?.[i]?.[0];
+    dets.push({ lm, reportedLabel, x: lm[0].x, y: lm[0].y, gest: g ? g.categoryName : "None", gun: isGunPose(lm) });
+  }
+  state.handCountNow = dets.length;
+  const result = [], used = new Set(), cand = [];
+  for (const side of ["left", "right"]) {
+    const s = track.slots[side];
+    if (!s) continue;
+    if (now - s.lastT > HOLD_MS) { track.slots[side] = null; continue; }
+    dets.forEach((d, di) => {
+      if (!used.has(di)) {
+        const dist = Math.hypot(d.x - s.x, d.y - s.y);
+        if (dist < MATCH_DIST) cand.push({ side, di, dist });
+      }
+    });
+  }
+  cand.sort((a, b) => a.dist - b.dist);
+  for (const c of cand) {
+    if (used.has(c.di) || !track.slots[c.side]) continue;
+    used.add(c.di);
+    const d = dets[c.di];
+    track.slots[c.side] = { x: d.x, y: d.y, lastT: now };
+    result.push({ label: c.side === "left" ? "Left" : "Right", lm: d.lm, gest: d.gest, gun: d.gun });
+  }
+  for (let di = 0; di < dets.length; di++) {
+    if (used.has(di)) continue;
+    const d = dets[di];
+    let side = d.x < 0.42 ? "left" : d.x > 0.58 ? "right" : d.reportedLabel;
+    if (result.some(r => r.label === (side === "left" ? "Left" : "Right"))) {
+      const other = side === "left" ? "Right" : "Left";
+      if (!result.some(r => r.label === other)) side = other === "Right" ? "right" : "left";
+    }
+    track.slots[side] = { x: d.x, y: d.y, lastT: now };
+    result.push({ label: side === "left" ? "Left" : "Right", lm: d.lm, gest: d.gest, gun: d.gun });
+  }
+  return result;
+}
+
+function process(res, now) {
+  state.frameHands = associate(res, now);
+  for (const { label, lm, gest, gun } of state.frameHands) {
+    const slot = label === "Left" ? state.left : state.right;
+    slot.buf.push(gest);
+    if (slot.buf.length > DEBOUNCE_N) slot.buf.shift();
+    if (slot.buf.length === DEBOUNCE_N && slot.buf.every(x => x === slot.buf[0]) && slot.buf[0] !== slot.gest) {
+      slot.gest = slot.buf[0];
+    }
+    if (label === "Left") {
+      const p5 = lm[5], p17 = lm[17];
+      let deg = Math.atan2(p5.y - p17.y, p5.x - p17.x) * 180 / Math.PI;
+      if (deg > 90) deg -= 180;
+      if (deg < -90) deg += 180;
+      state.left.bankS = state.left.bankS === null ? deg : state.left.bankS + (deg - state.left.bankS) * SMOOTH;
+      const x = lm[9].x, y = lm[9].y;
+      state.left.xS = state.left.xS === null ? x : state.left.xS + (x - state.left.xS) * SMOOTH;
+      state.left.yS = state.left.yS === null ? y : state.left.yS + (y - state.left.yS) * SMOOTH;
+      const dW = j => Math.hypot(lm[j].x - lm[0].x, lm[j].y - lm[0].y);
+      const scale = Math.hypot(lm[9].x - lm[0].x, lm[9].y - lm[0].y) || 1e-6;
+      const open = (dW(8) + dW(12) + dW(16) + dW(20)) / (4 * scale);
+      state.left.openS = state.left.openS === null ? open : state.left.openS + (open - state.left.openS) * 0.25;
+    } else {
+      state.right.gun = gun;
+      state.right.seenT = now;
+      const rx = lm[9].x, ry = lm[9].y;
+      const C = state.rcal;
+      if (!C.done) {
+        C.sumX += rx; C.sumY += ry; C.n++;
+        if (C.n >= 15) { C.cx = C.sumX / C.n; C.cy = C.sumY / C.n; C.done = true; }
+      } else {
+        const dx = rx - C.cx, dy = ry - C.cy;
+        state.right.dx += (dx - state.right.dx) * SMOOTH;
+        state.right.dy += (dy - state.right.dy) * SMOOTH;
+      }
+    }
+  }
+  if (state.frameHands.length > 0) state.lastHandT = now;
+  const hasR = state.frameHands.some(h => h.label === "Right");
+  if (!hasR && now - state.right.seenT > 2000 && state.rcal.done) {
+    state.rcal.done = false; state.rcal.n = 0; state.rcal.sumX = 0; state.rcal.sumY = 0;
+  }
+}
+
+// ===== Three.js：暮色森林场景 =====
+const THREE = await import("https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js");
+const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
+const dzf = v => Math.abs(v) < 0.12 ? 0 : v - Math.sign(v) * 0.12;
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x6a5a4e, 85, 190);   // 暖灰雾：与参考图的林雾同调
+const camera3 = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 400);
+camera3.position.set(0, 1.5, 8);
+camera3.lookAt(0, 0, -20);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.domElement.className = "game";
+document.body.prepend(renderer.domElement);
+addEventListener("resize", () => {
+  camera3.aspect = innerWidth / innerHeight;
+  camera3.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// 发光纹理（萤火虫 / 曳光 / 灯笼共用）
+const glowTex = (() => {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d");
+  const grd = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+  grd.addColorStop(0, "rgba(255,255,225,1)");
+  grd.addColorStop(0.35, "rgba(255,205,95,0.9)");
+  grd.addColorStop(1, "rgba(255,140,0,0)");
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+
+// ===== 天空：暮色渐变（天顶深蓝 → 青蓝 → 地平线暖橙）=====
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(180, 24, 12),
+  new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false,
+    uniforms: {
+      top: { value: new THREE.Color(0x0b1522) },
+      mid: { value: new THREE.Color(0x2e4a5e) },
+      bot: { value: new THREE.Color(0xe8a06a) }
+    },
+    vertexShader: `varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `
+      varying vec3 vP; uniform vec3 top; uniform vec3 mid; uniform vec3 bot;
+      void main(){
+        float h = normalize(vP).y;
+        vec3 c = h > 0.0 ? mix(mid, top, pow(h, 0.75)) : mix(mid, bot, pow(-h, 0.45));
+        gl_FragColor = vec4(c, 1.0);
+      }`
+  })
+);
+scene.add(sky);
+
+// ===== 地面：暖调网格 =====
+const grid = new THREE.GridHelper(400, 40, 0x8a6a3a, 0x3d3020);
+grid.material.transparent = true;
+grid.material.opacity = 0.4;
+grid.position.set(0, -5.2, -60);
+scene.add(grid);
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: 0x120f0c })
+);
+ground.position.set(0, -5.3, -60);
+scene.add(ground);
+
+// ===== 星空（少量，衬暮色）=====
+const starPos = new Float32Array(260 * 3);
+for (let i = 0; i < 260; i++) {
+  starPos[i * 3] = (Math.random() - 0.5) * 120;
+  starPos[i * 3 + 1] = Math.random() * 40 + 6;
+  starPos[i * 3 + 2] = -Math.random() * 160 + 10;
+}
+const starGeo = new THREE.BufferGeometry();
+starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
+const starsMat = new THREE.PointsMaterial({ color: 0xc9d8e8, size: 0.4, transparent: true, opacity: 0.7 });
+scene.add(new THREE.Points(starGeo, starsMat));
+
+// ===== 天色循环：黎明 → 白昼 → 黄昏 → 黑夜（每 40 秒轮换）=====
+const SKY_PHASES = [
+  { name: "黎明", top: 0x2a3550, mid: 0x8a7a8e, bot: 0xf2c99b, fog: 0x9a8a80, dark: 0.45, sun: 0xffd9b0, sunX: -30, sunY: 18 },
+  { name: "白昼", top: 0x2f6fa8, mid: 0x8fc4e8, bot: 0xe6eef4, fog: 0xa8c0d0, dark: 0.0,  sun: 0xfff8e0, sunX: 10,  sunY: 30 },
+  { name: "黄昏", top: 0x0b1522, mid: 0x2e4a5e, bot: 0xe8a06a, fog: 0x6a5a4e, dark: 0.6,  sun: 0xff9a5c, sunX: 34,  sunY: 14 },
+  { name: "黑夜", top: 0x05080f, mid: 0x0e1a28, bot: 0x22303e, fog: 0x2a323c, dark: 1.0,  sun: 0xcfe0f0, sunX: -22, sunY: 26 }
+];
+let skyIdx = 2, skyT = 0, curDark = 0.6;
+const curSkyTop = new THREE.Color(0x0b1522), curSkyMid = new THREE.Color(0x2e4a5e), curSkyBot = new THREE.Color(0xe8a06a), curFog = new THREE.Color(0x6a5a4e);
+const _cTmp = new THREE.Color();
+// 太阳/月亮（同一个发光体，随天色变换颜色与位置）
+const sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: glowTex, color: 0xff9a5c, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.9, depthWrite: false
+}));
+sunSprite.scale.set(26, 26, 1);
+sunSprite.position.set(34, 14, -150);
+scene.add(sunSprite);
+
+// ===== 萤火虫：暖光点，缓慢漂移 =====
+const FLY_N = 70;
+const flyPos = new Float32Array(FLY_N * 3);
+const flySeed = new Float32Array(FLY_N);
+for (let i = 0; i < FLY_N; i++) {
+  flyPos[i * 3] = (Math.random() - 0.5) * 36;
+  flyPos[i * 3 + 1] = Math.random() * 10 - 4;
+  flyPos[i * 3 + 2] = -Math.random() * 110;
+  flySeed[i] = Math.random() * Math.PI * 2;
+}
+const flyGeo = new THREE.BufferGeometry();
+flyGeo.setAttribute("position", new THREE.BufferAttribute(flyPos, 3));
+const flies = new THREE.Points(flyGeo, new THREE.PointsMaterial({
+  map: glowTex, color: 0xffc760, size: 1.3, transparent: true, opacity: 0.9,
+  blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
+}));
+scene.add(flies);
+
+// ===== 松林与灯笼：两侧剪影随飞行后移 =====
+const pineTrunks = [];
+const pineMat = new THREE.MeshBasicMaterial({ color: 0x1e2f30 });
+const lanternMat = new THREE.SpriteMaterial({ map: glowTex, color: 0xffa845, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.95, depthWrite: false });
+for (let i = 0; i < 26; i++) {
+  const side = i % 2 === 0 ? -1 : 1;
+  const g = new THREE.Group();
+  const h = 5 + Math.random() * 6;
+  for (let s = 0; s < 3; s++) {
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(1.6 - s * 0.42, h * 0.55, 6), pineMat);
+    cone.position.y = s * h * 0.28;
+    g.add(cone);
+  }
+  g.position.set(side * (13 + Math.random() * 12), -5.2 + h * 0.28, -Math.random() * 170 + 10);
+  scene.add(g);
+  g.userData.baseZ = g.position.z;
+  pineTrunks.push(g);
+  if (Math.random() < 0.45) {
+    const lantern = new THREE.Sprite(lanternMat);
+    lantern.scale.set(1.6, 1.6, 1);
+    lantern.position.set(g.position.x, g.position.y + 1.2, g.position.z);
+    lantern.userData.host = g;
+    scene.add(lantern);
+    g.userData.lantern = lantern;
+  }
+}
+
+// ===== 山脉剪影（远景层次）=====
+const mountainMat = new THREE.MeshBasicMaterial({ color: 0x101c24 });
+for (let i = 0; i < 9; i++) {
+  const m = new THREE.Mesh(new THREE.ConeGeometry(16 + Math.random() * 14, 18 + Math.random() * 16, 5), mountainMat);
+  m.position.set((Math.random() - 0.5) * 180, -6, -130 - Math.random() * 60);
+  scene.add(m);
+}
+// ===== 岩石（近景两侧）=====
+const rockMat = new THREE.MeshBasicMaterial({ color: 0x1a2426 });
+const rocks = [];
+for (let i = 0; i < 14; i++) {
+  const r = new THREE.Mesh(new THREE.IcosahedronGeometry(1.2 + Math.random() * 1.6, 0), rockMat);
+  r.position.set((i % 2 === 0 ? -1 : 1) * (10 + Math.random() * 14), -5 + Math.random() * 0.6, -Math.random() * 160 + 8);
+  r.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+  r.scale.y = 0.6 + Math.random() * 0.5;
+  scene.add(r); rocks.push(r);
+}
+// ===== 云团（柔光贴片，缓慢漂移）=====
+const clouds = [];
+for (let i = 0; i < 7; i++) {
+  const cl = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex, color: 0xffd9a8, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.12, depthWrite: false
+  }));
+  cl.scale.set(24 + Math.random() * 20, 10 + Math.random() * 8, 1);
+  cl.position.set((Math.random() - 0.5) * 140, 12 + Math.random() * 20, -80 - Math.random() * 90);
+  scene.add(cl); clouds.push(cl);
+}
+// ===== 地面灯花（暖光，参考图的灯暖氛围）=====
+for (let i = 0; i < 12; i++) {
+  const lamp = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex, color: 0xffb060, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.5, depthWrite: false
+  }));
+  lamp.scale.set(1.2, 1.2, 1);
+  lamp.position.set((i % 2 === 0 ? -1 : 1) * (8 + Math.random() * 10), -4.6, -Math.random() * 140);
+  scene.add(lamp);
+}
+
+// ===== 玩家：细节化战机（机身+座舱+后掠翼+平尾+垂尾+双引擎尾焰）=====
+const plane = new THREE.Group();
+{
+  const bodyMat = new THREE.MeshBasicMaterial({ color: 0xf2e8d8 });    // 暖白机身
+  const bellyMat = new THREE.MeshBasicMaterial({ color: 0xb0977a });   // 暗部
+  const accentMat = new THREE.MeshBasicMaterial({ color: 0x35b8d8 });  // 青蓝饰条
+  const canopyMat = new THREE.MeshBasicMaterial({ color: 0x16283a });  // 深色座舱盖
+
+  const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.38, 2.6, 6), bodyMat);
+  fuselage.rotation.x = Math.PI / 2;
+  plane.add(fuselage);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.32, 1.2, 6).rotateX(-Math.PI / 2), bodyMat);
+  nose.position.z = -1.9;
+  plane.add(nose);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.8, 6).rotateX(Math.PI / 2), bellyMat);
+  tail.position.z = 1.6;
+  plane.add(tail);
+  const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), canopyMat);
+  canopy.scale.set(0.75, 0.6, 1.6);
+  canopy.position.set(0, 0.22, -0.75);
+  plane.add(canopy);
+  const wingGeo = new THREE.BoxGeometry(2.0, 0.07, 0.7);
+  for (const s of [-1, 1]) {
+    const w = new THREE.Mesh(wingGeo, bodyMat);
+    w.position.set(s * 1.05, -0.02, 0.35);
+    w.rotation.y = s * -0.45;
+    w.rotation.z = s * 0.06;
+    plane.add(w);
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.3), accentMat);
+    tip.position.set(s * 2.0, 0.02, 0.6);
+    plane.add(tip);
+    const stab = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.05, 0.34), bellyMat);
+    stab.position.set(s * 0.42, 0.02, 1.45);
+    stab.rotation.y = s * -0.4;
+    plane.add(stab);
+    const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.3, 8).rotateX(Math.PI / 2), bellyMat);
+    nozzle.position.set(s * 0.22, 0, 1.75);
+    plane.add(nozzle);
+    const flame = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex, color: 0x7bdcff, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.9, depthWrite: false
+    }));
+    flame.scale.set(0.9, 0.9, 1);
+    flame.position.set(s * 0.22, 0, 2.1);
+    plane.add(flame);
+  }
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.6, 0.45), bodyMat);
+  fin.position.set(0, 0.32, 1.35);
+  fin.rotation.x = -0.25;
+  plane.add(fin);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.03, 1.6), accentMat);
+  stripe.position.set(0, 0.3, 0.2);
+  plane.add(stripe);
+}
+plane.scale.setScalar(0.6);
+scene.add(plane);
+
+// ===== 弹药与特效 =====
+const enemyGeo = new THREE.OctahedronGeometry(1);
+const enemyMats = {};   // 按类型缓存材质
+for (const k in ENEMY_TYPES) enemyMats[k] = new THREE.MeshBasicMaterial({ color: ENEMY_TYPES[k].color });
+const enemyHlMat = new THREE.MeshBasicMaterial({ color: 0xffe9c4 });
+const enemyWireGeo = new THREE.OctahedronGeometry(1.22);
+const enemyWireMat = new THREE.MeshBasicMaterial({ color: 0xffd9a0, wireframe: true, transparent: true, opacity: 0.3 });
+const shieldGeo = new THREE.SphereGeometry(1.35, 12, 10);
+const shieldMat = new THREE.MeshBasicMaterial({ color: 0xff9dc0, wireframe: true, transparent: true, opacity: 0.45 });
+
+const bulletGeo = new THREE.SphereGeometry(0.5, 10, 10);
+const bulletMat = new THREE.MeshBasicMaterial({ color: 0xffb35c, blending: THREE.AdditiveBlending, transparent: true, opacity: 1 });
+const rocketGeo = new THREE.ConeGeometry(0.28, 1.1, 6).rotateX(-Math.PI / 2);
+const rocketMat = new THREE.MeshBasicMaterial({ color: 0xff8c3a });
+const missileGeo = new THREE.SphereGeometry(0.32, 8, 8);
+const missileMat = new THREE.MeshBasicMaterial({ color: 0xff6bd0, blending: THREE.AdditiveBlending, transparent: true });
+
+const muzzleFlash = new THREE.Mesh(
+  new THREE.SphereGeometry(1.2, 8, 8),
+  new THREE.MeshBasicMaterial({ color: 0xffc44d, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.9 })
+);
+muzzleFlash.visible = false;
+scene.add(muzzleFlash);
+let muzzleFlashT = -9999;
+
+// 曳光（Sprite 广告牌，永面向相机）
+const tracers = [];
+function spawnTracer(offsetX = 0) {
+  let tr = tracers.find(o => !o.active);
+  if (!tr) {
+    const mat = new THREE.SpriteMaterial({ map: glowTex, color: 0xffb35c, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(1.15, 1.15, 1);
+    scene.add(sprite);
+    tr = { sprite, dir: new THREE.Vector3(), age: 0, life: 0.4, active: false };
+    tracers.push(tr);
+  }
+  tr.active = true;
+  tr.age = 0;
+  tr.sprite.visible = true;
+  tr.sprite.material.opacity = 1;
+  tr.sprite.position.set(plane.position.x + offsetX, plane.position.y, plane.position.z - 1.2);
+  tr.dir.copy(state.aimWorld).sub(tr.sprite.position).normalize();
+}
+
+const reticle = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(1.6, 1.6, 1.6)),
+  new THREE.LineBasicMaterial({ color: 0xff9dc0 })
+);
+reticle.visible = false;
+scene.add(reticle);
+
+// 弹道轨迹线
+const trajGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+const traj = new THREE.Line(trajGeo, new THREE.LineBasicMaterial({ color: 0xffcf8a, transparent: true, opacity: 0.7 }));
+scene.add(traj);
+
+const enemies = [], bullets = [], rockets = [], missiles = [], deaths = [];
+let score = 0, nextSpawn = 0;
+state.aimWorld = new THREE.Vector3(0, 0, -70);
+
+// ===== 关卡状态 =====
+let levelIdx = 0, levelKills = 0, levelOver = false, bossSpawned = false;
+let spawnRate = 1400, worldSpeedBase = 1.0;
+
+function showBanner(lev, isVictory) {
+  const b = $("banner");
+  if (isVictory) {
+    $("bLayer").textContent = "全 部 通 关";
+    $("bName").textContent = "血月渐隐";
+    $("bSub").textContent = "得分 " + score + " ｜ 暮林归航";
+  } else {
+    $("bLayer").textContent = LAYER_ZH[lev] || "第" + (lev + 1) + "关";
+    $("bName").textContent = LEVELS[lev].name;
+    $("bSub").textContent = LEVELS[lev].sub;
+  }
+  b.classList.add("show");
+  setTimeout(() => b.classList.remove("show"), 2600);
+}
+
+function applyLevel() {
+  const L = LEVELS[levelIdx];
+  spawnRate = L.spawnMs;
+  worldSpeedBase = L.speed;
+  levelKills = 0;
+  bossSpawned = false;
+  $("levelName").textContent = (levelIdx + 1) + " · " + L.name;
+  $("levelKill").textContent = "0/" + L.quota;
+  $("bossBar").style.display = "none";
+  if (L.types.includes("boss")) bossSpawned = false;
+  showBanner(levelIdx, false);
+}
+
+function spawnEnemy(forceType) {
+  const L = LEVELS[levelIdx];
+  const typeKey = forceType || L.types[Math.floor(Math.random() * L.types.length)];
+  const spec = ENEMY_TYPES[typeKey];
+  const m = new THREE.Mesh(enemyGeo, enemyMats[typeKey]);
+  m.scale.setScalar(spec.size);
+  m.add(new THREE.Mesh(enemyWireGeo, enemyWireMat));
+  if (spec.shield) m.add(new THREE.Mesh(shieldGeo, shieldMat));
+  m.position.set((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 7, -70);
+  m.userData = {
+    type: typeKey, hp: spec.hp, baseX: m.position.x, phase: Math.random() * Math.PI * 2,
+    zig: spec.zig || 0, pulse: !!spec.pulse, boss: !!spec.boss, spec
+  };
+  scene.add(m); enemies.push(m);
+  if (spec.boss) {
+    $("bossBar").style.display = "block";
+    $("bossFill").style.width = "100%";
+  }
+}
+
+function hitEnemy(e, dmg) {
+  const ud = e.userData;
+  ud.hp -= dmg;
+  if (ud.spec.shield && ud.hp === 1) {
+    const sh = e.children.find(c => c.geometry === shieldGeo);
+    if (sh) sh.visible = false;
+  }
+  if (ud.hp <= 0) { killEnemy(e); return; }
+  // 命中反馈：短暂高亮
+  e.material = enemyHlMat;
+  e.userData.hitT = performance.now();
+  if (ud.boss) $("bossFill").style.width = Math.max(0, ud.hp / ud.spec.hp * 100) + "%";
+}
+
+function killEnemy(m) {
+  scene.remove(m);
+  enemies.splice(enemies.indexOf(m), 1);
+  deaths.push({ m, t: 0 });
+  const pts = m.userData.spec.pts;
+  score += pts;
+  levelKills++;
+  $("score").textContent = score;
+  $("ultCharge").textContent = Math.min(100, score - weapons.ultScoreAtLast) + "/100";
+  const L = LEVELS[levelIdx];
+  if (L.types.includes("boss") && m.userData.boss) {
+    levelOver = true;
+    showBanner(levelIdx, true);
+    $("bossBar").style.display = "none";
+    $("wstate").textContent = "全 部 通 关";
+    return;
+  }
+  $("levelKill").textContent = Math.min(levelKills, L.quota) + "/" + L.quota;
+  if (levelKills >= L.quota && levelIdx < LEVELS.length - 1) {
+    levelIdx++;
+    applyLevel();
+  }
+}
+
+// ===== 武器 =====
+const weapons = {
+  mgNext: 0, ultHeld: false, ultLast: -9999, chargeStart: null, firedAt: null, chargeTarget: null,
+  rocketAmmo: 10, rocketReloadT: null, rocketNext: 0,
+  missileReserve: 4, missileReloadT: null,
+  ultEndT: null, ultRocketsLeft: 0, ultMissilesLeft: 0, ultRocketsNext: 0, ultMissilesNext: 0,
+  ultScoreAtLast: 0
+};
+const MISSILE_CHARGE_MS = 1500;
+const ROCKET_MAG = 10, ROCKET_RELOAD_MS = 3000, ROCKET_INTERVAL_MS = 500;
+const MISSILE_RESERVE_MAX = 4, MISSILE_RELOAD_ONE_MS = 4000;
+const ULT_DURATION_MS = 10000, ULT_COST = 100;
+
+function fireMG() {
+  const b = new THREE.Mesh(bulletGeo, bulletMat);
+  b.position.copy(plane.position); b.position.z -= 1.2;
+  b.userData.dir = state.aimWorld.clone().sub(b.position).normalize();
+  scene.add(b); bullets.push(b);
+  muzzleFlash.position.copy(b.position);
+  muzzleFlash.visible = true;
+  muzzleFlashT = performance.now();
+}
+function fireRocket() {
+  const r = new THREE.Mesh(rocketGeo, rocketMat);
+  r.position.copy(plane.position); r.position.z -= 1.5;
+  r.userData.dir = state.aimWorld.clone().sub(r.position).normalize();
+  r.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), r.userData.dir);
+  scene.add(r); rockets.push(r);
+}
+function launchMissile(target) {
+  const m = new THREE.Mesh(missileGeo, missileMat);
+  m.position.copy(plane.position); m.position.z -= 1.5;
+  m.userData.dir = new THREE.Vector3(0, 0, -1);
+  m.userData.target = target || null;
+  if (!m.userData.target) {
+    let best = null, bd = 1e9;
+    for (const e of enemies) {
+      const d = e.position.distanceTo(state.aimWorld);
+      if (d < bd) { bd = d; best = e; }
+    }
+    m.userData.target = best;
+  }
+  scene.add(m); missiles.push(m);
+}
+function fireMGHoming(offsetX) {
+  const b = new THREE.Mesh(bulletGeo, bulletMat);
+  b.position.set(plane.position.x + offsetX, plane.position.y, plane.position.z - 1.0);
+  let best = null, bd = 1e9;
+  for (const e of enemies) {
+    const d = e.position.distanceTo(plane.position);
+    if (d < bd) { bd = d; best = e; }
+  }
+  b.userData.dir = best ? best.position.clone().sub(b.position).normalize() : new THREE.Vector3(0, 0, -1);
+  b.userData.target = best;
+  b.userData.homing = true;
+  scene.add(b); bullets.push(b);
+}
+
+// ===== 启动 =====
+const video = document.createElement("video");
+video.setAttribute("playsinline", ""); video.muted = true;
+const pip = $("pip"), pctx = pip.getContext("2d");
+const det = document.createElement("canvas");
+const dctx = det.getContext("2d");
+let recognizer = null;
+
+$("startBtn").addEventListener("click", start);
+
+async function start() {
+  const btn = $("startBtn"), msg = $("bootMsg");
+  btn.disabled = true;
+  try {
+    msg.style.color = "";
+    msg.textContent = "① 加载识别库与 3D 库…";
+    const lib = await import(LIB_URL);
+    msg.textContent = "② 请求摄像头权限…";
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }, audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+    msg.textContent = "③ 加载手势模型（约 8MB）…";
+    const vision = await lib.FilesetResolver.forVisionTasks(WASM_URL);
+    try {
+      recognizer = await lib.GestureRecognizer.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" }, runningMode: "VIDEO", numHands: 2
+      });
+    } catch (e) {
+      recognizer = await lib.GestureRecognizer.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" }, runningMode: "VIDEO", numHands: 2
+      });
+    }
+    pip.width = video.videoWidth; pip.height = video.videoHeight;
+    det.width = 640; det.height = Math.round(640 * video.videoHeight / video.videoWidth);
+    applyLevel();
+    for (let i = 0; i < 3; i++) spawnEnemy("basic");
+    $("boot").style.display = "none";
+    state.running = true;
+    state.lastHandT = performance.now();
+  } catch (err) {
+    msg.textContent = "";
+    $("bootMsg").style.color = "#ff8a8a";
+    $("bootMsg").textContent = err.name === "NotAllowedError"
+      ? "摄像头权限被拒绝 — 地址栏允许后刷新"
+      : err.name === "NotReadableError"
+        ? "摄像头被占用 — 关掉其他使用摄像头的页面再刷新"
+        : "启动失败: " + err.message;
+    btn.disabled = false;
+  }
+}
+
+// ===== 主循环 =====
+let lastT = 0;
+let fpsEma = 0, fpsLastDomT = 0;
+
+function loop(t) {
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (t - lastT) / 1000 || 0.016);
+  lastT = t;
+
+  const fpsNow = dt > 0 ? 1 / dt : 0;
+  fpsEma = fpsEma ? fpsEma * 0.95 + fpsNow * 0.05 : fpsNow;
+  if (t - fpsLastDomT > 500) { $("fps").textContent = fpsEma.toFixed(0); fpsLastDomT = t; }
+  if (muzzleFlash.visible && performance.now() - muzzleFlashT > 90) muzzleFlash.visible = false;
+
+  // 视觉步骤
+  if (state.running && video.currentTime !== state.lastVideoTime) {
+    state.lastVideoTime = video.currentTime;
+    const w = pip.width, h = pip.height;
+    pctx.save(); pctx.translate(w, 0); pctx.scale(-1, 1); pctx.drawImage(video, 0, 0, w, h); pctx.restore();
+    dctx.save(); dctx.translate(det.width, 0); dctx.scale(-1, 1); dctx.drawImage(video, 0, 0, det.width, det.height); dctx.restore();
+    const res = recognizer.recognizeForVideo(det, t);
+    process(res, t);
+    drawSkeleton();
+  }
+
+  const R = state.right, L = state.left;
+
+  // ===== 驾驶 =====
+  let throttle = 1;
+  if (L.openS !== null) throttle = THREE.MathUtils.clamp((L.openS - 1.1) / (1.9 - 1.1) * 5, 0, 5) / 5;
+  const gear = Math.round(throttle * 5);
+  $("spd").textContent = gear + " 档 (" + Math.round(throttle * 100) + "%)";
+
+  if (L.xS !== null) {
+    let targetX = (L.xS - 0.5) * 20;
+    if (L.bankS !== null) targetX += (L.bankS / 60) * 4;
+    targetX = THREE.MathUtils.clamp(targetX, -12, 12);
+    plane.position.x += (targetX - plane.position.x) * 0.25;
+  }
+  if (L.yS !== null) {
+    const targetY = (0.5 - L.yS) * 9;
+    plane.rotation.x = THREE.MathUtils.clamp((targetY - plane.position.y) * 0.12, -0.45, 0.45);
+    plane.position.y += (targetY - plane.position.y) * 0.25;
+  }
+  if (L.bankS !== null) plane.rotation.z = THREE.MathUtils.degToRad(-L.bankS);
+
+  // 相机视差
+  {
+    const kCam = 1 - Math.exp(-dt * 4);
+    camera3.position.x += (plane.position.x * 0.18 - camera3.position.x) * kCam;
+    camera3.position.y += (1.5 + plane.position.y * 0.15 - camera3.position.y) * kCam;
+  }
+  camera3.updateMatrixWorld();
+
+  // ===== 瞄准与轨迹线 =====
+  {
+    const fdx = THREE.MathUtils.clamp(dzf(state.right.dx / 0.145), -1, 1);
+    const fdy = THREE.MathUtils.clamp(dzf(-state.right.dy / 0.145), -1, 1);
+    state.aimWorld.set(plane.position.x + fdx * 9, plane.position.y + fdy * 9, -70);
+    const posAttr = trajGeo.attributes.position;
+    posAttr.setXYZ(0, plane.position.x, plane.position.y, plane.position.z - 1.5);
+    posAttr.setXYZ(1, state.aimWorld.x, state.aimWorld.y, state.aimWorld.z);
+    posAttr.needsUpdate = true;
+    _v1.set(state.aimWorld.x - plane.position.x, state.aimWorld.y - plane.position.y, state.aimWorld.z - plane.position.z);
+    const abLenSq = Math.max(_v1.lengthSq(), 1e-6);
+    for (const e of enemies) {
+      _v2.set(e.position.x - plane.position.x, e.position.y - plane.position.y, e.position.z - plane.position.z);
+      const tt = THREE.MathUtils.clamp(_v2.dot(_v1) / abLenSq, 0, 1);
+      _v3.copy(_v1).multiplyScalar(tt);
+      const dx = _v2.x - _v3.x, dy = _v2.y - _v3.y, dz = _v2.z - _v3.z;
+      const on = dx * dx + dy * dy + dz * dz < 2.25;
+      if (e.userData.hl !== on) {
+        e.userData.hl = on;
+        e.material = on ? enemyHlMat : enemyMats[e.userData.type];
+      }
+    }
+  }
+
+  // ===== 武器逻辑 =====
+  const inUlt = weapons.ultEndT != null && t < weapons.ultEndT;
+  const rocketPose = state.running && (R.gest === "Pointing_Up" || R.gun);
+  const mgNow = state.running && R.gest === "Thumb_Up";   // 点赞姿势 = 机枪开火
+  const ultNow = state.running && R.gest === "ILoveYou";
+  const missilePose = state.running && R.gest === "Victory";
+
+  if (mgNow && !inUlt) {
+    if (t >= weapons.mgNext) { fireMG(); spawnTracer(); weapons.mgNext = t + 110; }
+  } else if (!mgNow) weapons.mgNext = 0;
+
+  if (weapons.rocketReloadT != null && t - weapons.rocketReloadT >= ROCKET_RELOAD_MS) {
+    weapons.rocketAmmo = ROCKET_MAG; weapons.rocketReloadT = null;
+  }
+  if (rocketPose && !inUlt && weapons.rocketReloadT == null && weapons.rocketAmmo > 0 && t >= weapons.rocketNext) {
+    fireRocket();
+    weapons.rocketAmmo--;
+    weapons.rocketNext = t + ROCKET_INTERVAL_MS;
+    if (weapons.rocketAmmo <= 0) weapons.rocketReloadT = t;
+  }
+
+  if (weapons.missileReserve < MISSILE_RESERVE_MAX && weapons.missileReloadT == null) weapons.missileReloadT = t;
+  if (weapons.missileReloadT != null && t - weapons.missileReloadT >= MISSILE_RELOAD_ONE_MS) {
+    weapons.missileReserve++;
+    weapons.missileReloadT = null;
+  }
+
+  // 大招：100 分门槛
+  const ultReady = (score - weapons.ultScoreAtLast) >= ULT_COST;
+  if (ultNow && !weapons.ultHeld && !inUlt && ultReady && !levelOver) {
+    weapons.ultEndT = t + ULT_DURATION_MS;
+    weapons.ultLast = t;
+    weapons.ultScoreAtLast = score;
+    weapons.ultRocketsLeft = 20; weapons.ultRocketsNext = t + 300;
+    weapons.ultMissilesLeft = 8; weapons.ultMissilesNext = t + 500;
+    $("flash").style.transition = "none";
+    $("flash").style.opacity = "0.7";
+    requestAnimationFrame(() => { $("flash").style.transition = "opacity .5s"; $("flash").style.opacity = "0"; });
+  }
+  weapons.ultHeld = ultNow;
+  if (inUlt) {
+    if (weapons.ultRocketsLeft > 0 && t >= weapons.ultRocketsNext) { fireRocket(); weapons.ultRocketsLeft--; weapons.ultRocketsNext = t + 500; }
+    if (weapons.ultMissilesLeft > 0 && t >= weapons.ultMissilesNext) { launchMissile(null); weapons.ultMissilesLeft--; weapons.ultMissilesNext = t + 1250; }
+    if (mgNow && t >= weapons.mgNext) { fireMGHoming(-0.9); fireMGHoming(0.9); spawnTracer(-0.9); spawnTracer(0.9); weapons.mgNext = t + 140; }
+  }
+
+  const rocketNow = rocketPose && !inUlt;
+  const missileNow = missilePose && !inUlt;
+
+  // 导弹蓄力
+  let lockPct = 0;
+  const lockOn = missileNow && performance.now() - R.seenT < 300;
+  if (lockOn) {
+    if (weapons.chargeTarget && !enemies.includes(weapons.chargeTarget)) {
+      weapons.chargeStart = null;
+      weapons.chargeTarget = null;
+    }
+    if (weapons.chargeStart == null) weapons.chargeStart = t;
+    if (!weapons.chargeTarget && enemies.length) {
+      let best = null, bd = 1e9;
+      for (const e of enemies) {
+        const d = e.position.distanceTo(state.aimWorld);
+        if (d < bd) { bd = d; best = e; }
+      }
+      weapons.chargeTarget = best;
+    }
+    reticle.visible = !!weapons.chargeTarget;
+    if (weapons.chargeTarget) reticle.position.copy(weapons.chargeTarget.position);
+    const held = t - weapons.chargeStart;
+    if (held >= MISSILE_CHARGE_MS) {
+      if (!weapons.firedAt) {
+        if (weapons.missileReserve > 0) {
+          weapons.missileReserve--;
+          launchMissile(weapons.chargeTarget);
+          weapons.firedAt = t;
+        } else {
+          weapons.chargeStart = t;
+        }
+      }
+      lockPct = 100;
+    } else lockPct = held / MISSILE_CHARGE_MS * 100;
+  } else {
+    weapons.chargeStart = null; weapons.chargeTarget = null; weapons.firedAt = null;
+    reticle.visible = false;
+  }
+  $("lockTrack").style.display = lockOn ? "block" : "none";
+  $("lockFill").style.width = lockPct + "%";
+
+  // HUD 状态
+  const ws = $("wstate");
+  if (levelOver) { ws.textContent = "全 部 通 关"; ws.className = ""; }
+  else if (inUlt) { ws.textContent = "💥 火力全开！剩 " + Math.max(0, Math.ceil((weapons.ultEndT - t) / 1000)) + "s"; ws.className = "fire"; }
+  else if (lockOn) { ws.textContent = lockPct >= 100 ? "导弹已发射" : "🎯 导弹锁定 " + ((t - weapons.chargeStart) / 1000).toFixed(1) + "s"; ws.className = "fire"; }
+  else if (rocketNow) { ws.textContent = weapons.rocketReloadT != null ? "火箭弹 · 换弹中…" : "🚀 火箭弹"; ws.className = "fire"; }
+  else if (mgNow) { ws.textContent = "🔫 机枪开火中"; ws.className = "fire"; }
+  else { ws.textContent = "空仓静默"; ws.className = ""; }
+
+  $("rkAmmo").textContent = weapons.rocketReloadT != null ? "换弹中…" : weapons.rocketAmmo + "/" + ROCKET_MAG;
+  $("msAmmo").textContent = weapons.missileReserve + "/" + MISSILE_RESERVE_MAX;
+  $("ultCharge").textContent = Math.min(ULT_COST, score - weapons.ultScoreAtLast) + "/" + ULT_COST;
+
+  // ===== 环境动态：天色循环 + 松林后移 + 萤火虫漂移 =====
+  {
+    // 天色循环：每 40 秒切换时段，颜色/雾/黑暗度平滑过渡
+    skyT += dt;
+    if (skyT > 40) {
+      skyT = 0;
+      skyIdx = (skyIdx + 1) % SKY_PHASES.length;
+      $("dayPhase").textContent = SKY_PHASES[skyIdx].name;
+    }
+    const P = SKY_PHASES[skyIdx];
+    const k = 1 - Math.exp(-dt * 0.9);
+    curSkyTop.lerp(_cTmp.setHex(P.top), k);
+    curSkyMid.lerp(_cTmp.setHex(P.mid), k);
+    curSkyBot.lerp(_cTmp.setHex(P.bot), k);
+    curFog.lerp(_cTmp.setHex(P.fog), k);
+    curDark += (P.dark - curDark) * k;
+    sky.material.uniforms.top.value.copy(curSkyTop);
+    sky.material.uniforms.mid.value.copy(curSkyMid);
+    sky.material.uniforms.bot.value.copy(curSkyBot);
+    scene.fog.color.copy(curFog);
+    // 太阳/月亮：颜色与位置随时段迁移
+    sunSprite.material.color.lerp(_cTmp.setHex(P.sun), k);
+    sunSprite.position.x += (P.sunX - sunSprite.position.x) * k * 0.5;
+    sunSprite.position.y += (P.sunY - sunSprite.position.y) * k * 0.5;
+    // 星空 / 萤火 / 灯笼的显隐随黑暗度
+    starsMat.opacity = 0.02 + 0.95 * curDark;
+    flies.material.opacity = 0.12 + 0.8 * curDark;
+    lanternMat.opacity = 0.25 + 0.7 * curDark;
+    // 云团缓慢漂移
+    for (let ci = 0; ci < clouds.length; ci++) {
+      clouds[ci].position.x += Math.sin(t * 0.0002 + ci) * 0.8 * dt;
+    }
+
+    const worldSpeed = 12 * throttle;
+    for (const g of pineTrunks) {
+      g.position.z += worldSpeed * dt * 0.55;
+      if (g.position.z > 16) g.position.z -= 190;
+      if (g.userData.lantern) {
+        g.userData.lantern.position.x = g.position.x;
+        g.userData.lantern.position.z = g.position.z;
+      }
+    }
+    const fp = flyGeo.attributes.position;
+    for (let i = 0; i < FLY_N; i++) {
+      flyPos[i * 3 + 1] += Math.sin(t * 0.0012 + flySeed[i]) * 0.35 * dt;
+      flyPos[i * 3] += Math.cos(t * 0.0009 + flySeed[i]) * 0.3 * dt;
+      if (flyPos[i * 3 + 2] > 12) flyPos[i * 3 + 2] -= 122;
+      flyPos[i * 3 + 2] += worldSpeed * dt * 0.35;
+    }
+    fp.needsUpdate = true;
+  }
+
+  // ===== 敌人更新（关卡行为）=====
+  if (state.running && !levelOver && t > nextSpawn) {
+    const L = LEVELS[levelIdx];
+    if (L.types.includes("boss") && !bossSpawned) {
+      spawnEnemy("boss");
+      bossSpawned = true;
+      nextSpawn = t + spawnRate;
+    } else if (!L.types.includes("boss") || bossSpawned) {
+      if (enemies.length < (L.types.includes("boss") ? 5 : 6)) spawnEnemy();
+      nextSpawn = t + spawnRate;
+    }
+  }
+  const worldSpeed = 12 * throttle * worldSpeedBase;
+  for (const e of [...enemies]) {
+    const ud = e.userData;
+    e.position.z += worldSpeed * dt * ud.spec.speed;
+    if (ud.zig) e.position.x = ud.baseX + Math.sin(t * 0.0025 + ud.phase) * ud.zig;
+    if (ud.pulse) e.position.z += Math.sin(t * 0.004 + ud.phase) * 8 * dt;
+    e.rotation.x += dt * 0.8; e.rotation.y += dt * 0.7;
+    if (ud.hitT && performance.now() - ud.hitT > 120) {
+      ud.hitT = 0;
+      e.material = enemyMats[ud.type];
+    }
+    if (e.position.z > 8) { scene.remove(e); enemies.splice(enemies.indexOf(e), 1); }
+  }
+
+  // ===== 弹药更新 =====
+  for (const tr of tracers) {
+    if (!tr.active) continue;
+    tr.age += dt;
+    if (tr.age >= tr.life) { tr.active = false; tr.sprite.visible = false; continue; }
+    tr.sprite.position.addScaledVector(tr.dir, 70 * dt);
+    tr.sprite.material.opacity = 1 - tr.age / tr.life;
+  }
+  for (const b of [...bullets]) {
+    if (b.userData.homing && b.userData.target && enemies.includes(b.userData.target)) {
+      b.userData.dir.copy(b.userData.target.position).sub(b.position).normalize();
+    }
+    const px = b.position.x, py = b.position.y, pz = b.position.z;
+    b.position.addScaledVector(b.userData.dir, 55 * dt);
+    if (b.position.distanceTo(plane.position) > 120) { scene.remove(b); bullets.splice(bullets.indexOf(b), 1); continue; }
+    _v1.set(b.position.x - px, b.position.y - py, b.position.z - pz);
+    const segLenSq = Math.max(_v1.lengthSq(), 1e-6);
+    for (const e of enemies) {
+      _v2.set(e.position.x - px, e.position.y - py, e.position.z - pz);
+      const tt = THREE.MathUtils.clamp(_v2.dot(_v1) / segLenSq, 0, 1);
+      _v3.copy(_v1).multiplyScalar(tt);
+      const dx = _v2.x - _v3.x, dy = _v2.y - _v3.y, dz = _v2.z - _v3.z;
+      const rHit = 1.0 + e.userData.spec.size * 0.45;
+      if (dx * dx + dy * dy + dz * dz < rHit * rHit) {
+        hitEnemy(e, 1);
+        scene.remove(b); bullets.splice(bullets.indexOf(b), 1);
+        break;
+      }
+    }
+  }
+  for (const r of [...rockets]) {
+    const px = r.position.x, py = r.position.y, pz = r.position.z;
+    r.position.addScaledVector(r.userData.dir, 60 * dt);
+    if (r.position.distanceTo(plane.position) > 150) { scene.remove(r); rockets.splice(rockets.indexOf(r), 1); continue; }
+    _v1.set(r.position.x - px, r.position.y - py, r.position.z - pz);
+    const segLenSq = Math.max(_v1.lengthSq(), 1e-6);
+    for (const e of enemies) {
+      _v2.set(e.position.x - px, e.position.y - py, e.position.z - pz);
+      const tt = THREE.MathUtils.clamp(_v2.dot(_v1) / segLenSq, 0, 1);
+      _v3.copy(_v1).multiplyScalar(tt);
+      const dx = _v2.x - _v3.x, dy = _v2.y - _v3.y, dz = _v2.z - _v3.z;
+      const rHit = 1.5 + e.userData.spec.size * 0.5;
+      if (dx * dx + dy * dy + dz * dz < rHit * rHit) {
+        hitEnemy(e, 3);
+        scene.remove(r); rockets.splice(rockets.indexOf(r), 1);
+        break;
+      }
+    }
+  }
+  for (const m of [...missiles]) {
+    const tg = m.userData.target;
+    if (tg && enemies.includes(tg)) {
+      m.userData.dir.copy(tg.position).sub(m.position).normalize();
+    }
+    m.position.addScaledVector(m.userData.dir, 26 * dt);
+    if (m.position.distanceTo(plane.position) > 150) { scene.remove(m); missiles.splice(missiles.indexOf(m), 1); continue; }
+    for (const e of enemies) {
+      if (m.position.distanceTo(e.position) < 1.3 + e.userData.spec.size * 0.3) {
+        hitEnemy(e, 5);
+        scene.remove(m); missiles.splice(missiles.indexOf(m), 1);
+        break;
+      }
+    }
+  }
+  for (const d of [...deaths]) {
+    d.t += dt;
+    if (d.t > 0.15) { scene.remove(d.m); deaths.splice(deaths.indexOf(d), 1); continue; }
+    d.m.scale.multiplyScalar(0.88);
+  }
+
+  renderer.render(scene, camera3);
+}
+requestAnimationFrame(loop);
+
+function drawSkeleton() {
+  const w = pip.width, h = pip.height;
+  for (const { label, lm } of state.frameHands) {
+    const color = label === "Left" ? "#7bdcff" : "#ffb35c";
+    const P = j => ({ x: lm[j].x * w, y: lm[j].y * h });
+    const p5 = P(5), p17 = P(17);
+    pctx.strokeStyle = "rgba(255,255,255,.85)"; pctx.lineWidth = 3.5;
+    pctx.beginPath(); pctx.moveTo(p5.x, p5.y); pctx.lineTo(p17.x, p17.y); pctx.stroke();
+    pctx.strokeStyle = color; pctx.lineWidth = 2;
+    pctx.beginPath();
+    for (const [a, b] of HAND_CONNECTIONS) { const pa = P(a), pb = P(b); pctx.moveTo(pa.x, pa.y); pctx.lineTo(pb.x, pb.y); }
+    pctx.stroke();
+    pctx.fillStyle = color;
+    for (let j = 0; j < lm.length; j++) { const p = P(j); pctx.beginPath(); pctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2); pctx.fill(); }
+    const w0 = P(0);
+    pctx.font = "bold 16px Consolas";
+    pctx.fillText(label === "Left" ? "左手" : "右手", w0.x - 18, w0.y + 28);
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>暮林机战 · 手势飞行射击 | Dusk Forest Squadron</title>
+<meta name="description" content="用双手驾驶战机，穿越五片暮色空域。MediaPipe 手势识别 + Three.js，画面全部本地处理。">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    color: #4a4050;
+    background: #f6f2ec;
+    overflow-x: hidden;
+  }
+
+  /* ===== 天空背景层（全页固定）===== */
+  .sky {
+    position: fixed; inset: 0; z-index: -2;
+    background: linear-gradient(180deg, #6f86c8 0%, #c9a8d8 46%, #ffe3c8 78%, #ffedcc 100%);
+  }
+  .sky .glow {
+    position: absolute; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,236,200,0.9) 0%, rgba(255,220,170,0.35) 45%, rgba(255,220,170,0) 70%);
+    filter: blur(2px);
+  }
+  .sky .glow.g1 { width: 420px; height: 420px; right: 8%; top: 6%; }
+  .sky .glow.g2 { width: 300px; height: 300px; left: 6%; top: 30%; opacity: 0.7; }
+  .sky .haze {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 34%;
+    background: linear-gradient(180deg, rgba(255,227,200,0) 0%, rgba(255,227,200,0.55) 100%);
+  }
+
+  /* 萤火虫 */
+  .firefly {
+    position: fixed; z-index: 0; width: 6px; height: 6px; border-radius: 50%;
+    background: radial-gradient(circle, #fff8dc 0%, #ffd98a 45%, rgba(255,200,100,0) 75%);
+    box-shadow: 0 0 12px 3px rgba(255, 210, 130, 0.55);
+    animation: fly linear infinite;
+    pointer-events: none;
+  }
+  @keyframes fly {
+    0%   { transform: translate(0, 0) scale(1); opacity: 0.2; }
+    25%  { opacity: 0.95; }
+    50%  { transform: translate(40px, -60px) scale(0.8); opacity: 0.5; }
+    75%  { opacity: 0.9; }
+    100% { transform: translate(-30px, -130px) scale(1.1); opacity: 0; }
+  }
+
+  /* ===== 英雄区 ===== */
+  .hero {
+    min-height: 92vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; position: relative; padding: 90px 24px 70px;
+  }
+  .badge {
+    font-size: 12px; letter-spacing: 6px; color: #fff6e8;
+    background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.35);
+    padding: 7px 18px; border-radius: 999px; margin-bottom: 26px;
+    backdrop-filter: blur(4px);
+  }
+  h1.title {
+    font-size: clamp(52px, 9vw, 96px); font-weight: 700; letter-spacing: 22px;
+    color: #fffaf0; text-indent: 22px;
+    text-shadow: 0 0 50px rgba(255, 235, 200, 0.85), 0 4px 14px rgba(90, 70, 130, 0.45);
+    margin-bottom: 10px;
+  }
+  .en { font-size: 14px; letter-spacing: 9px; color: #fff2d8; opacity: 0.92; margin-bottom: 30px; }
+  .tagline { font-size: clamp(16px, 2.4vw, 21px); color: #fff8ec; letter-spacing: 3px; margin-bottom: 40px; }
+  .tagline b { color: #ffe9b8; font-weight: 700; }
+
+  .cta { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; }
+  .btn {
+    display: inline-block; text-decoration: none; font-weight: 700; letter-spacing: 4px;
+    padding: 15px 46px; border-radius: 999px; font-size: 16px;
+    transition: transform 0.25s, box-shadow 0.25s;
+  }
+  .btn.primary {
+    background: linear-gradient(180deg, #fff3dc, #ffd9a0); color: #5a4a3a;
+    box-shadow: 0 0 40px rgba(255, 235, 200, 0.75), 0 6px 18px rgba(90, 70, 130, 0.3);
+  }
+  .btn.ghost {
+    color: #5a4a70; border: 1.5px solid rgba(122, 96, 140, 0.45);
+    background: rgba(255,255,255,0.38); backdrop-filter: blur(4px);
+  }
+  .btn:hover { transform: translateY(-3px) scale(1.03); }
+  .btn.primary:hover { box-shadow: 0 0 60px rgba(255, 235, 200, 0.95), 0 10px 24px rgba(90, 70, 130, 0.35); }
+
+  .cam-note {
+    margin-top: 34px; font-size: 12.5px; color: #7a5a7a; letter-spacing: 2px;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .cam-note::before { content: "●"; color: #6aad7a; font-size: 9px; }
+
+  .scroll-hint {
+    position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+    color: #9a7a9a; font-size: 12px; letter-spacing: 4px;
+    animation: bob 2.2s ease-in-out infinite;
+  }
+  @keyframes bob { 0%,100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, 10px); } }
+
+  /* ===== 通用区块 ===== */
+  main { position: relative; }
+  section {
+    max-width: 1060px; margin: 0 auto; padding: 90px 24px;
+  }
+  .sec-tag {
+    font-size: 12px; letter-spacing: 6px; color: #b08a5a; margin-bottom: 12px;
+  }
+  .sec-title {
+    font-size: clamp(28px, 4vw, 40px); font-weight: 700; letter-spacing: 8px;
+    color: #4a4050; margin-bottom: 14px;
+  }
+  .sec-sub { font-size: 15px; color: #8a7f8a; letter-spacing: 1px; margin-bottom: 44px; line-height: 1.9; }
+
+  .card {
+    background: rgba(255, 253, 248, 0.82);
+    border: 1px solid rgba(180, 160, 140, 0.25);
+    border-radius: 22px; padding: 34px 36px;
+    box-shadow: 0 12px 40px rgba(120, 100, 140, 0.10);
+    backdrop-filter: blur(6px);
+  }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  @media (max-width: 860px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+
+  /* 双手分工 */
+  .hand-card h3 { font-size: 22px; letter-spacing: 3px; margin-bottom: 6px; }
+  .hand-card .role { font-size: 13px; letter-spacing: 2px; margin-bottom: 18px; }
+  .hand-card.left h3 { color: #3aa8c8; } .hand-card.left .role { color: #6aa8c0; }
+  .hand-card.right h3 { color: #e8985a; } .hand-card.right .role { color: #d8a070; }
+  .hand-card ul { list-style: none; }
+  .hand-card li {
+    padding: 10px 0 10px 26px; position: relative;
+    border-bottom: 1px dashed rgba(150, 130, 120, 0.25);
+    font-size: 14.5px; line-height: 1.7;
+  }
+  .hand-card li:last-child { border-bottom: none; }
+  .hand-card li::before { content: "◆"; position: absolute; left: 4px; font-size: 10px; top: 15px; }
+  .hand-card.left li::before { color: #3aa8c8; }
+  .hand-card.right li::before { color: #e8985a; }
+  .hand-card li b { color: #4a4050; }
+
+  /* 手势武器表 */
+  .wp-row {
+    display: flex; align-items: center; gap: 18px;
+    padding: 16px 20px; border-radius: 16px; margin-bottom: 12px;
+    background: rgba(255, 253, 248, 0.82);
+    border: 1px solid rgba(180, 160, 140, 0.22);
+  }
+  .wp-glyph {
+    width: 54px; height: 54px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px; background: rgba(255, 220, 160, 0.35);
+  }
+  .wp-name { font-weight: 700; font-size: 16px; width: 130px; }
+  .wp-desc { font-size: 13.5px; color: #8a7f8a; line-height: 1.7; flex: 1; }
+
+  /* 关卡 */
+  .levels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; }
+  @media (max-width: 960px) { .levels { grid-template-columns: 1fr; } }
+  .lv {
+    border-radius: 20px; padding: 26px 22px; color: #fff8ec; position: relative; overflow: hidden;
+    min-height: 240px; display: flex; flex-direction: column;
+  }
+  .lv .no { font-size: 12px; letter-spacing: 4px; opacity: 0.85; }
+  .lv .nm { font-size: 22px; font-weight: 700; letter-spacing: 3px; margin: 8px 0 4px; }
+  .lv .en2 { font-size: 10px; letter-spacing: 2px; opacity: 0.75; margin-bottom: 14px; }
+  .lv .ds { font-size: 13px; line-height: 1.8; opacity: 0.95; flex: 1; }
+  .lv .qt { font-size: 12px; margin-top: 14px; letter-spacing: 1px; opacity: 0.9; }
+  .lv1 { background: linear-gradient(165deg, #8fa8d8, #5a78b8); }
+  .lv2 { background: linear-gradient(165deg, #d8a0c8, #9a68b8); }
+  .lv3 { background: linear-gradient(165deg, #a8b8c8, #6a7a9a); }
+  .lv4 { background: linear-gradient(165deg, #e8b890, #c87858); }
+  .lv5 { background: linear-gradient(165deg, #c86a5a, #8a3848); }
+  .lv5 .nm::after { content: "BOSS"; font-size: 10px; background: rgba(255,255,255,0.25); padding: 2px 8px; border-radius: 999px; margin-left: 8px; letter-spacing: 2px; vertical-align: 3px; }
+
+  /* 大招 */
+  .ult-band {
+    border-radius: 26px; padding: 46px 40px; text-align: center; color: #fff8ec;
+    background: linear-gradient(135deg, #e8985a 0%, #d86a8a 55%, #8a68c8 100%);
+    box-shadow: 0 20px 60px rgba(200, 120, 100, 0.35);
+  }
+  .ult-band h3 { font-size: 30px; letter-spacing: 8px; margin-bottom: 14px; }
+  .ult-band p { font-size: 15px; line-height: 2; opacity: 0.95; }
+  .ult-band .combo { display: flex; justify-content: center; gap: 30px; margin-top: 26px; flex-wrap: wrap; }
+  .ult-band .cb { text-align: center; }
+  .ult-band .cb .n { font-size: 34px; font-weight: 700; }
+  .ult-band .cb .t { font-size: 12.5px; letter-spacing: 2px; opacity: 0.9; margin-top: 4px; }
+
+  /* 技术 */
+  .tech-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  @media (max-width: 860px) { .tech-grid { grid-template-columns: 1fr; } }
+  .tech-item h4 { font-size: 16px; margin-bottom: 8px; color: #4a4050; }
+  .tech-item p { font-size: 13.5px; line-height: 1.9; color: #8a7f8a; }
+
+  footer {
+    text-align: center; padding: 60px 24px 70px; color: #a898a8; font-size: 12.5px;
+    letter-spacing: 1px; line-height: 2.2;
+    background: linear-gradient(180deg, rgba(255,227,200,0) 0%, rgba(255,227,200,0.5) 100%);
+  }
+  footer a { color: #b08a5a; text-decoration: none; }
+
+  /* 滚动浮现 */
+  .reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.9s, transform 0.9s; }
+  .reveal.on { opacity: 1; transform: none; }
+</style>
+</head>
+<body>
+
+<div class="sky">
+  <div class="glow g1"></div>
+  <div class="glow g2"></div>
+  <div class="haze"></div>
+</div>
+
+<header class="hero">
+  <div class="badge">手势飞行射击 · WEB GAME</div>
+  <h1 class="title">暮林机战</h1>
+  <div class="en">DUSK FOREST SQUADRON</div>
+  <p class="tagline">在暮色的天空之国，用<b>双手</b>驾驶战机，穿越五片空域。</p>
+  <div class="cta">
+    <a class="btn primary" href="./m2/index.html">立即起飞</a>
+    <a class="btn ghost" href="#how">查看玩法</a>
+  </div>
+  <div class="cam-note">需要摄像头 · 画面全程本地处理，绝不上传</div>
+  <div class="scroll-hint">往下滚动</div>
+</header>
+
+<main>
+  <section id="how" class="reveal">
+    <div class="sec-tag">HOW TO PLAY</div>
+    <div class="sec-title">双手分工</div>
+    <p class="sec-sub">左手负责飞行，右手负责瞄准与开火——像真正的飞行员与武器官一样协作。所有手势由摄像头识别，掌心居中自动校准。</p>
+    <div class="grid2">
+      <div class="card hand-card left reveal">
+        <h3>左手 · 驾驶杆</h3>
+        <div class="role">PILOT — 飞行姿态</div>
+        <ul>
+          <li><b>掌心移动</b>：大空间平移，上下左右自由飞行</li>
+          <li><b>手掌倾斜</b>：机体滚转表现，转弯更有味道</li>
+          <li><b>手掌开合</b>：油门 0-5 档，全开极速、握拳急停</li>
+        </ul>
+      </div>
+      <div class="card hand-card right reveal">
+        <h3>右手 · 武器官</h3>
+        <div class="role">GUNNER — 瞄准与开火</div>
+        <ul>
+          <li><b>掌心移动</b>：转动金色弹道线，扫过敌人即锁定</li>
+          <li><b>手势切换</b>：五种姿势对应五种武器状态</li>
+          <li><b>自动校准</b>：首次入画静止半秒即完成校准</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="weapons" class="reveal">
+    <div class="sec-tag">WEAPONS</div>
+    <div class="sec-title">手势武器库</div>
+    <p class="sec-sub">五种姿势五种武器，张掌即保险。弹药自动管理，专心空战。</p>
+    <div class="wp-row reveal"><div class="wp-glyph">🖐️</div><div class="wp-name">张开手掌 · 保险</div><div class="wp-desc">全武器静默。安全态，不会误击发。</div></div>
+    <div class="wp-row reveal"><div class="wp-glyph">👍</div><div class="wp-name">点赞 · 机枪</div><div class="wp-desc">无限弹药，110ms 连发，曳光弹沿弹道线倾泻。</div></div>
+    <div class="wp-row reveal"><div class="wp-glyph">☝️</div><div class="wp-name">手枪 · 火箭弹</div><div class="wp-desc">10 发弹夹，0.5s/发连发；打空 3 秒自动换整夹。</div></div>
+    <div class="wp-row reveal"><div class="wp-glyph">✌️</div><div class="wp-name">比耶 · 追踪导弹</div><div class="wp-desc">蓄力 1.5s 自动发射，自动锁敌；备弹 4 发，每 4s 自动装填。</div></div>
+    <div class="wp-row reveal"><div class="wp-glyph">🤟</div><div class="wp-name">爱你 · 火力全开</div><div class="wp-desc">终极形态 10 秒：火箭×20 + 追踪导弹×8 + 双联锁敌机枪。需击杀攒满 100 分。</div></div>
+  </section>
+
+  <section id="levels" class="reveal">
+    <div class="sec-tag">FIVE REALMS</div>
+    <div class="sec-title">五关空域</div>
+    <p class="sec-sub">每片空域有自己的住民与脾气。达成击杀配额即可进入下一空域，第五空域迎战血月巨像。</p>
+    <div class="levels">
+      <div class="lv lv1 reveal"><div class="no">第一空域</div><div class="nm">萤火谷</div><div class="en2">FIREFLY VALLEY</div><div class="ds">暮色渐沉，萤火为灯。基础晶体巡逻队，适合热身。</div><div class="qt">击杀配额 8</div></div>
+      <div class="lv lv2 reveal"><div class="no">第二空域</div><div class="nm">双星潮</div><div class="en2">TWIN TIDE</div><div class="ds">双流交叉，追星逐月。之字机动敌，需要预判弹道。</div><div class="qt">击杀配额 10</div></div>
+      <div class="lv lv3 reveal"><div class="no">第三空域</div><div class="nm">雾林哨戒</div><div class="en2">MIST WARDEN</div><div class="ds">雾锁林深，甲光如铁。护盾敌需先破盾再击杀。</div><div class="qt">击杀配额 10</div></div>
+      <div class="lv lv4 reveal"><div class="no">第四空域</div><div class="nm">失速风暴</div><div class="en2">STALL STORM</div><div class="ds">湍流骤起，忽快忽慢。脉冲敌考验节奏感。</div><div class="qt">击杀配额 12</div></div>
+      <div class="lv lv5 reveal"><div class="no">第五空域</div><div class="nm">灯火山口</div><div class="en2">LANTERN CRATER</div><div class="ds">血月当空，巨像临世。20 血 BOSS 护卫压阵。</div><div class="qt">击杀巨像通关</div></div>
+    </div>
+  </section>
+
+  <section id="ult" class="reveal">
+    <div class="sec-tag">ULTIMATE</div>
+    <div class="sec-title">火力全开</div>
+    <p class="sec-sub">击杀积累得分，攒满 100 分即可释放一次终极形态。爱你手势触发，全弹幕倾泻十秒。</p>
+    <div class="ult-band reveal">
+      <h3>火力全开</h3>
+      <p>FULL BURN · 持续 10 秒 · 击杀攒分解锁</p>
+      <div class="combo">
+        <div class="cb"><div class="n">×20</div><div class="t">火箭弹倾泻</div></div>
+        <div class="cb"><div class="n">×8</div><div class="t">追踪导弹</div></div>
+        <div class="cb"><div class="n">×2</div><div class="t">双联锁敌机枪</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tech" class="reveal">
+    <div class="sec-tag">TECH & PRIVACY</div>
+    <div class="sec-title">技术与隐私</div>
+    <p class="sec-sub">这是一个纯前端网页游戏，无需安装、无需注册。</p>
+    <div class="tech-grid">
+      <div class="tech-item card"><h4>摄像头 · 本地推理</h4><p>手势识别由 MediaPipe Hands 在浏览器本地完成，摄像头画面全程不经过网络、不上传任何服务器。</p></div>
+      <div class="tech-item card"><h4>Three.js · 实时渲染</h4><p>暮色森林、云海浮岛、弹道曳光全部由 Three.js 程序化生成，无外部素材加载。</p></div>
+      <div class="tech-item card"><h4>建议环境</h4><p>Chrome / Edge 桌面版 + 摄像头 + 光线充足的环境。坐姿距摄像头 30-50cm，双手保持在画面内。</p></div>
+      <div class="tech-item card"><h4>开源</h4><p>全部代码将开源在 GitHub，欢迎 Star 与 Fork。</p></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  暮林机战 DUSK FOREST SQUADRON · 手势飞行射击<br>
+  Built with Three.js + MediaPipe Hands · 灵感致敬 thatgamecompany《Sky 光遇》《Journey 风之旅人》<br>
+  <a href="https://github.com" target="_blank" rel="noopener">GitHub 仓库</a>（部署后替换为实际地址）
+</footer>
+
+<script>
+  // 萤火虫
+  const n = 22;
+  for (let i = 0; i < n; i++) {
+    const f = document.createElement("div");
+    f.className = "firefly";
+    f.style.left = Math.random() * 100 + "vw";
+    f.style.top = 20 + Math.random() * 75 + "vh";
+    f.style.animationDuration = 6 + Math.random() * 8 + "s";
+    f.style.animationDelay = -Math.random() * 10 + "s";
+    f.style.width = f.style.height = 3 + Math.random() * 5 + "px";
+    document.body.appendChild(f);
+  }
+  // 滚动浮现
+  const io = new IntersectionObserver((es) => {
+    es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("on"); io.unobserve(e.target); } });
+  }, { threshold: 0.12 });
+  document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
+</script>
+</body>
+</html>

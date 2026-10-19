@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>M1 手势诊断 · 飞机操控验证</title>
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: #11161f;
+    --line: #1e2735;
+    --txt: #d7e2ee;
+    --dim: #6b7a8d;
+    --cyan: #35e0ff;
+    --orange: #ff9f43;
+    --good: #3ddc84;
+    --warn: #ff5d5d;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--txt);
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .mono { font-family: Consolas, "Courier New", monospace; }
+
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 18px; border-bottom: 1px solid var(--line);
+    background: #0c1119;
+  }
+  header h1 { font-size: 15px; font-weight: 600; letter-spacing: 1px; }
+  header .tag {
+    font-size: 11px; color: var(--cyan); border: 1px solid var(--cyan);
+    padding: 2px 8px; border-radius: 3px; opacity: .9;
+  }
+  #status { font-size: 12px; color: var(--dim); margin-left: auto; }
+  #status.ok { color: var(--good); }
+  #status.err { color: var(--warn); }
+
+  main { flex: 1; display: flex; gap: 14px; padding: 14px; min-height: 0; }
+
+  .stage {
+    position: relative; flex: 1.7; min-width: 0;
+    background: #000; border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+  }
+  #overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  #hint {
+    position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+    background: rgba(255,93,93,.15); border: 1px solid var(--warn); color: #ffb3b3;
+    font-size: 13px; padding: 6px 14px; border-radius: 20px; display: none;
+  }
+  #boot {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px;
+    background: rgba(10,14,20,.92); z-index: 5; text-align: center; padding: 20px;
+  }
+  #boot h2 { font-size: 18px; }
+  #boot p { font-size: 13px; color: var(--dim); line-height: 1.8; max-width: 420px; }
+  #startBtn {
+    background: var(--cyan); color: #04222b; border: none; cursor: pointer;
+    font-size: 15px; font-weight: 700; padding: 12px 36px; border-radius: 6px;
+    font-family: inherit;
+  }
+  #startBtn:disabled { opacity: .4; cursor: wait; }
+  #bootMsg { font-size: 13px; color: var(--cyan); min-height: 18px; }
+
+  aside { width: 330px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .card h3 {
+    font-size: 12px; color: var(--dim); font-weight: 600;
+    letter-spacing: 2px; margin-bottom: 12px;
+  }
+  .card h3 b { font-weight: 700; }
+  .card h3 .lh { color: var(--cyan); }
+  .card h3 .rh { color: var(--orange); }
+
+  .bigval { font-size: 34px; font-weight: 700; line-height: 1; }
+  .bigval small { font-size: 14px; color: var(--dim); font-weight: 400; margin-left: 6px; }
+  .subval { font-size: 11px; color: var(--dim); margin-top: 6px; }
+
+  .wp-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .wp {
+    display: flex; justify-content: space-between; gap: 8px; font-size: 12px;
+    padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px;
+    color: var(--dim);
+  }
+  .wp .wp-g { color: var(--txt); opacity: .8; }
+  .wp.active { border-color: var(--orange); background: rgba(255,159,67,.1); }
+  .wp.active .wp-g, .wp.active .wp-w { color: var(--orange); font-weight: 700; }
+  .wp.safe.active { border-color: var(--good); background: rgba(61,220,132,.08); }
+  .wp.safe.active .wp-g, .wp.safe.active .wp-w { color: var(--good); }
+
+  .lockbar { margin-top: 12px; }
+  .lock-label { font-size: 11px; color: var(--orange); margin-bottom: 4px; font-weight: 700; }
+  .lockbar-track {
+    height: 8px; background: #0a0f16; border: 1px solid var(--line);
+    border-radius: 4px; overflow: hidden;
+  }
+  .lockbar-track i {
+    display: block; height: 100%; width: 0%;
+    background: linear-gradient(90deg, #ff9f43, #ff5d5d);
+    box-shadow: 0 0 8px rgba(255,159,67,.6);
+  }
+
+  .track {
+    position: relative; height: 10px; background: #0a0f16;
+    border: 1px solid var(--line); border-radius: 5px; margin: 14px 0 4px;
+  }
+  .track .center { position: absolute; left: 50%; top: -4px; bottom: -4px; width: 1px; background: var(--dim); }
+  .track .needle {
+    position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%;
+    transform: translate(-50%, -50%); transition: none;
+  }
+  .needle.cyan { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+  .needle.orange { background: var(--orange); box-shadow: 0 0 8px var(--orange); }
+  .track-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--dim); }
+
+  .gesture-name { font-size: 26px; font-weight: 700; color: var(--orange); min-height: 34px; }
+  .gesture-en { font-size: 11px; color: var(--dim); margin-top: 2px; }
+  .cbar { height: 6px; background: #0a0f16; border-radius: 3px; margin-top: 10px; overflow: hidden; }
+  .cbar i { display: block; height: 100%; background: var(--orange); width: 0%; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .kv { font-size: 12px; color: var(--dim); }
+  .kv b { display: block; font-size: 18px; color: var(--txt); font-weight: 600; margin-top: 2px; }
+
+  .tips { font-size: 11px; color: var(--dim); line-height: 1.9; margin-top: 8px; }
+  .tips em { color: var(--cyan); font-style: normal; }
+</style>
+</head>
+<body>
+
+<script>
+  // 全局错误兜底：任何脚本错误直接显示在启动卡片上，便于远程排查
+  window.addEventListener("error", function (ev) {
+    var m = document.getElementById("bootMsg");
+    if (m) { m.style.color = "#ff5d5d"; m.textContent = "脚本错误: " + ((ev.error && ev.error.message) || ev.message || ev.type); }
+  });
+  window.addEventListener("unhandledrejection", function (ev) {
+    var m = document.getElementById("bootMsg");
+    if (m) { m.style.color = "#ff5d5d"; m.textContent = "异步错误: " + ((ev.reason && ev.reason.message) || ev.reason); }
+  });
+</script>
+
+<header>
+  <h1>M1 手势诊断</h1>
+  <span class="tag">飞机操控验证</span>
+  <span id="status">待启动</span>
+</header>
+
+<main>
+  <section class="stage">
+    <canvas id="overlay"></canvas>
+    <div id="hint">未识别到手：靠近一点 / 开灯 / 掌心朝向镜头</div>
+    <div id="boot">
+      <h2>手势 → 飞机操控 · 输入诊断</h2>
+      <p>
+        验证三件事：① 左手倾角能否稳定跟随（未来控制飞机滚转）<br>
+        ② 右手手势能否准确分类（未来控制武器）<br>
+        ③ 双手同框是否互相干扰<br><br>
+        请在<b>光线充足</b>的环境下测试，坐姿距摄像头 30–50cm
+      </p>
+      <button id="startBtn">开启摄像头</button>
+      <div id="bootMsg" class="mono"></div>
+    </div>
+  </section>
+
+  <aside>
+    <div class="card">
+      <h3><b class="lh">左手</b> · 飞机滚转仪表（未来 = 倾斜操控）</h3>
+      <div class="bigval mono"><span id="bankVal">--</span><small id="bankDir">未检测</small></div>
+      <div class="subval mono">原始值: <span id="bankRaw">--</span> ｜ 0° = 掌面水平，负 = 左倾</div>
+      <div class="track">
+        <div class="center"></div>
+        <div class="needle cyan" id="bankNeedle" style="left:50%"></div>
+      </div>
+      <div class="track-labels"><span>左倾 90°</span><span>水平</span><span>右倾 90°</span></div>
+
+      <div style="margin-top:16px" class="kv">掌心横向位置（未来 = 左右平移）<b class="mono" id="palmX">--</b></div>
+      <div class="track">
+        <div class="needle cyan" id="xNeedle" style="left:50%"></div>
+      </div>
+      <div class="track-labels"><span>画面左</span><span>画面右</span></div>
+    </div>
+
+    <div class="card">
+      <h3><b class="rh">右手</b> · 武器手势定版测试</h3>
+      <div class="gesture-name" id="gestName">无</div>
+      <div class="gesture-en mono" id="gestEn">None</div>
+      <div class="cbar"><i id="gestBar"></i></div>
+      <div class="subval mono">置信度: <span id="gestScore">--</span> ｜ 原始检测: <span id="gestRaw">--</span>（防抖: 连续3帧才切换）</div>
+      <div class="lockbar" id="lockWrap" style="display:none">
+        <div class="lock-label mono" id="lockLabel"></div>
+        <div class="lockbar-track"><i id="lockFill"></i></div>
+      </div>
+      <div class="wp-list">
+        <div class="wp safe" data-g="Open_Palm"><span class="wp-g">张开手掌</span><span class="wp-w">空仓挂机 · 不开火 ✅已定版</span></div>
+        <div class="wp" data-g="Closed_Fist"><span class="wp-g">握拳</span><span class="wp-w">机枪 · 按住连发 ✅已定版</span></div>
+        <div class="wp" data-g="Pointing_Up"><span class="wp-g">手枪手势（食指）</span><span class="wp-w">火箭弹 · 直射非追踪 ✅已定版</span></div>
+        <div class="wp" data-g="Victory"><span class="wp-g">比耶</span><span class="wp-w">追踪导弹 · 蓄力3秒自动发射 ✅已定版</span></div>
+        <div class="wp" data-g="ILoveYou"><span class="wp-g">爱你 🤙</span><span class="wp-w">大招 ✅已定版（效果 M3 定）</span></div>
+      </div>
+      <div class="subval" style="margin-top:10px">捏合开合度（备选方案 · 观察用）: <span id="pinchVal" class="mono">--</span></div>
+    </div>
+
+    <div class="card">
+      <h3>系统诊断</h3>
+      <div class="grid2">
+        <div class="kv">渲染 FPS<b class="mono" id="fps">--</b></div>
+        <div class="kv">推理耗时<b class="mono" id="inferMs">--</b></div>
+        <div class="kv">识别手数<b class="mono" id="handCount">0</b></div>
+        <div class="kv">摄像头<b class="mono" id="camRes">--</b></div>
+      </div>
+      <div class="tips">
+        · 骨架颜色：<em style="color:var(--cyan)">青色 = 左手</em> ／ <em style="color:var(--orange)">橙色 = 右手</em><br>
+        · 白色粗线 = 指关节线（倾角的测量基准）<br>
+        · 验收标准：倾角跟手无明显延迟 · 手势准确率 &gt;90% · 双手 5 分钟不串
+      </div>
+    </div>
+  </aside>
+</main>
+
+<script type="module">
+// CDN 库改为点击后动态加载：即使从 file:// 双击打开也能工作，且加载失败会显示在页面上
+const LIB_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task";
+
+const GESTURE_ZH = {
+  None: "无", Closed_Fist: "握拳", Open_Palm: "张开手掌", Pointing_Up: "指向",
+  Thumb_Up: "点赞", Thumb_Down: "倒赞", Victory: "比耶", ILoveYou: "爱你"
+};
+
+// MediaPipe Hands 21 点标准连接
+const HAND_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],
+  [0,17]
+];
+
+const $ = id => document.getElementById(id);
+const video = document.createElement("video");
+video.setAttribute("playsinline", "");
+video.muted = true;
+
+const canvas = $("overlay"), ctx = canvas.getContext("2d");
+
+const SMOOTH = 0.35;          // 倾角/位置平滑系数（越小越稳，越大越跟手）
+const DEBOUNCE_N = 3;         // 手势防抖帧数
+const DEADZONE = 8;           // 倾角显示死区（度）
+
+const state = {
+  running: false,
+  left:  { bankS: null, xS: null, buf: [], gest: "None" },
+  right: { buf: [], gest: "None", score: 0 },
+  inferMsEma: 0, fpsEma: 0, lastFrameT: 0,
+  lastHandT: 0, lastVideoTime: -1, frameTick: 0
+};
+
+$("startBtn").addEventListener("click", start);
+$("bootMsg").textContent = "脚本就绪 ✓ — 点击上方按钮开启";
+
+let lib = null;
+
+async function start() {
+  const btn = $("startBtn"), msg = $("bootMsg");
+  btn.disabled = true;
+  try {
+    msg.style.color = "";
+    msg.textContent = "① 加载手势识别库…";
+    if (!lib) lib = await import(LIB_URL);
+    const { GestureRecognizer, FilesetResolver } = lib;
+
+    msg.textContent = "② 请求摄像头权限…";
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+      audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+
+    msg.textContent = "③ 加载手势识别模型（约 8MB，首次稍慢）…";
+    const vision = await FilesetResolver.forVisionTasks(WASM_URL);
+    let recognizer;
+    try {
+      recognizer = await GestureRecognizer.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+        runningMode: "VIDEO", numHands: 2
+      });
+    } catch (e) {
+      msg.textContent = "GPU 不可用，切换 CPU 模式…";
+      recognizer = await GestureRecognizer.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
+        runningMode: "VIDEO", numHands: 2
+      });
+    }
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    $("camRes").textContent = `${canvas.width}×${canvas.height}`;
+
+    $("boot").style.display = "none";
+    const st = $("status");
+    st.textContent = "运行中";
+    st.className = "ok";
+    state.running = true;
+    state.lastHandT = performance.now();
+    state._recognizer = recognizer;
+    requestAnimationFrame(loop);
+  } catch (err) {
+    msg.textContent = "";
+    const st = $("status");
+    st.textContent = err.name === "NotAllowedError"
+      ? "摄像头权限被拒绝 — 请在浏览器地址栏允许后刷新"
+      : err.name === "NotReadableError"
+        ? "摄像头被占用 — 请先关闭 TouchDesigner 或其他正在使用摄像头的程序，再刷新本页"
+        : "启动失败: " + err.message;
+    st.className = "err";
+    btn.disabled = false;
+  }
+}
+
+function loop(t) {
+  requestAnimationFrame(loop);
+
+  // FPS 统计
+  if (state.lastFrameT) {
+    const fps = 1000 / (t - state.lastFrameT);
+    state.fpsEma = state.fpsEma ? state.fpsEma * 0.9 + fps * 0.1 : fps;
+  }
+  state.lastFrameT = t;
+
+  if (video.currentTime === state.lastVideoTime) return;
+  state.lastVideoTime = video.currentTime;
+
+  // 画面镜像后绘制（MediaPipe 左右手判定假设输入为镜像画面）
+  const w = canvas.width, h = canvas.height;
+  ctx.save();
+  ctx.translate(w, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0, w, h);
+  ctx.restore();
+
+  // 推理
+  const t0 = performance.now();
+  const res = state._recognizer.recognizeForVideo(canvas, t0);
+  state.inferMsEma = state.inferMsEma ? state.inferMsEma * 0.9 + (performance.now() - t0) * 0.1 : (performance.now() - t0);
+
+  process(res, t);
+  drawOverlay();
+
+  if (++state.frameTick % 3 === 0) updatePanels(t);
+}
+
+// ===== 自定义"手枪"手势：食指伸直 + 中/无名/小指蜷起，不限制指向方向 =====
+// （MediaPipe 内置 Pointing_Up 只认手指朝上，横指/斜指会判成 None，无法用于瞄准）
+function isGunPose(lm) {
+  const scale = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y) || 1e-6;
+  const d = (a, b) => Math.hypot(lm[a].x - lm[b].x, lm[a].y - lm[b].y);
+  const idxExt = d(8, 0) / scale;             // 食指尖离腕距离（伸直时显著变大）
+  const midExt = d(12, 0) / scale;
+  const midCurled   = d(12, 9) / scale < 0.9; // 中指尖靠近掌心
+  const ringCurled  = d(16, 13) / scale < 0.9;
+  const pinkyCurled = d(20, 17) / scale < 0.9;
+  return idxExt > 1.1 && midExt < idxExt * 0.75 && midCurled && ringCurled && pinkyCurled;
+}
+
+// ===== 双手身份跟踪：按腕部位置做帧间匹配，标签粘滞，防止双手交叠时串身份 =====
+const track = { slots: { left: null, right: null } };
+const HOLD_MS = 250;      // 手消失多久后释放该侧槽位
+const MATCH_DIST = 0.30;  // 帧间匹配的最大腕部位移（归一化坐标）
+
+function associate(res, now) {
+  const hands = res.handedness || res.handednesses || [];
+  const dets = [];
+  for (let i = 0; i < hands.length; i++) {
+    const lm = res.landmarks[i];
+    if (!lm) continue;
+    const reported = hands[i]?.[0]?.categoryName;
+    // 实测（2026-10-19 验收）：镜像输入下 MediaPipe 返回的左右与真实相反，此处翻转
+    const reportedLabel = reported === "Left" ? "Right" : reported === "Right" ? "Left" : reported;
+    const g = res.gestures?.[i]?.[0];
+    dets.push({
+      lm, reportedLabel,
+      x: lm[0].x, y: lm[0].y,                       // 腕部位置，用于帧间匹配
+      gest: g ? g.categoryName : "None",
+      gScore: g ? g.score : 0,
+      gun: isGunPose(lm)
+    });
+  }
+  state.handCountNow = dets.length;
+
+  const result = [];
+  const used = new Set();
+
+  // 1) 与旧槽位最近邻匹配（按距离升序贪心）：匹配上就沿用旧标签，不信单帧判定
+  const cand = [];
+  for (const side of ["left", "right"]) {
+    const s = track.slots[side];
+    if (!s) continue;
+    if (now - s.lastT > HOLD_MS) { track.slots[side] = null; continue; }
+    dets.forEach((d, di) => {
+      if (!used.has(di)) {
+        const dist = Math.hypot(d.x - s.x, d.y - s.y);
+        if (dist < MATCH_DIST) cand.push({ side, di, dist });
+      }
+    });
+  }
+  cand.sort((a, b) => a.dist - b.dist);
+  for (const c of cand) {
+    if (used.has(c.di) || !track.slots[c.side]) continue;
+    used.add(c.di);
+    const d = dets[c.di];
+    track.slots[c.side] = { x: d.x, y: d.y, lastT: now };
+    result.push({ label: c.side === "left" ? "Left" : "Right", lm: d.lm, gest: d.gest, gScore: d.gScore, gun: d.gun });
+  }
+
+  // 2) 新出现的手：位置先验分配（镜像画面里左手出现在屏幕左侧）
+  for (let di = 0; di < dets.length; di++) {
+    if (used.has(di)) continue;
+    const d = dets[di];
+    let side = d.x < 0.42 ? "left" : d.x > 0.58 ? "right" : d.reportedLabel;
+    // 本帧该侧已被占则换另一侧
+    if (result.some(r => r.label === (side === "left" ? "Left" : "Right"))) {
+      const other = side === "left" ? "Right" : "Left";
+      if (!result.some(r => r.label === other)) side = other === "Right" ? "right" : "left";
+    }
+    track.slots[side] = { x: d.x, y: d.y, lastT: now };
+    result.push({ label: side === "left" ? "Left" : "Right", lm: d.lm, gest: d.gest, gScore: d.gScore, gun: d.gun });
+  }
+
+  return result;
+}
+
+function process(res, now) {
+  state.frameHands = associate(res, now);
+
+  for (const { label, lm, gest, gScore, gun } of state.frameHands) {
+    const slot = label === "Left" ? state.left : state.right;
+
+    // 手势防抖：连续 DEBOUNCE_N 帧相同才切换
+    slot.buf.push(gest);
+    if (slot.buf.length > DEBOUNCE_N) slot.buf.shift();
+    if (slot.buf.length === DEBOUNCE_N && slot.buf.every(x => x === slot.buf[0]) && slot.buf[0] !== slot.gest) {
+      slot.gest = slot.buf[0];
+    }
+
+    if (label === "Left") {
+      // 滚转角：p5(食指根) - p17(小指根) 指关节线相对水平的夹角
+      const p5 = lm[5], p17 = lm[17];
+      let deg = Math.atan2(p5.y - p17.y, p5.x - p17.x) * 180 / Math.PI;
+      if (deg > 90) deg -= 180;
+      if (deg < -90) deg += 180;
+      state.left.bankRaw = deg;
+      state.left.bankS = state.left.bankS === null ? deg : state.left.bankS + (deg - state.left.bankS) * SMOOTH;
+
+      // 掌心横向位置：9号点(中指根) 的 x（已镜像，左小右大）
+      const x = lm[9].x;
+      state.left.xS = state.left.xS === null ? x : state.left.xS + (x - state.left.xS) * SMOOTH;
+    }
+    if (label === "Right") {
+      state.right.score = gScore;
+      state.right.raw = gest;
+      state.right.gun = gun;   // 自定义手枪手势（火箭弹触发条件之一）
+      state.right.seenT = now;
+      state.right.lm = lm;
+    }
+  }
+
+  if (state.frameHands.length > 0) state.lastHandT = now;
+  $("hint").style.display = (state.running && now - state.lastHandT > 2000) ? "block" : "none";
+}
+
+function drawOverlay() {
+  for (const { label, lm } of (state.frameHands || [])) {
+    const isLeft = label === "Left";
+    const color = isLeft ? "#35e0ff" : "#ff9f43";
+    const P = j => ({ x: lm[j].x * canvas.width, y: lm[j].y * canvas.height });
+
+    // 指关节线（倾角测量基准）
+    const p5 = P(5), p17 = P(17);
+    ctx.strokeStyle = "rgba(255,255,255,.85)";
+    ctx.lineWidth = 3.5;
+    ctx.beginPath(); ctx.moveTo(p5.x, p5.y); ctx.lineTo(p17.x, p17.y); ctx.stroke();
+
+    // 骨架连线
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (const [a, b] of HAND_CONNECTIONS) {
+      const pa = P(a), pb = P(b);
+      ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y);
+    }
+    ctx.stroke();
+
+    // 关键点
+    ctx.fillStyle = color;
+    for (let j = 0; j < lm.length; j++) {
+      const p = P(j);
+      const r = [4, 8, 12, 16, 20].includes(j) ? 4 : 2.5;
+      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // 手别标签
+    const w0 = P(0);
+    ctx.font = "bold 16px Consolas";
+    ctx.fillStyle = color;
+    ctx.fillText(isLeft ? "左手" : "右手", w0.x - 18, w0.y + 28);
+  }
+}
+
+function updatePanels(now) {
+  $("fps").textContent = state.fpsEma.toFixed(0);
+  $("inferMs").textContent = state.inferMsEma.toFixed(1) + " ms";
+
+  // 左手
+  const L = state.left;
+  if (L.bankS !== null) {
+    const d = L.bankS;
+    $("bankVal").textContent = (d > 0 ? "+" : "") + d.toFixed(0) + "°";
+    $("bankDir").textContent = d < -DEADZONE ? "左倾" : d > DEADZONE ? "右倾" : "水平";
+    $("bankDir").style.color = Math.abs(d) > DEADZONE ? "var(--cyan)" : "var(--dim)";
+    $("bankRaw").textContent = L.bankRaw.toFixed(1) + "°";
+    $("bankNeedle").style.left = (50 + Math.max(-90, Math.min(90, d)) / 90 * 50) + "%";
+    const xp = Math.max(0, Math.min(1, L.xS));
+    $("palmX").textContent = (xp * 100).toFixed(0) + " %";
+    $("xNeedle").style.left = (xp * 100) + "%";
+  } else {
+    $("bankVal").textContent = "--"; $("bankDir").textContent = "未检测";
+  }
+
+  // 右手
+  const R = state.right;
+  // 火箭弹：内置"指向"或自定义手枪手势（任意方向）都触发
+  const rocket = R.gest === "Pointing_Up" || R.gun;
+  $("gestName").textContent = rocket ? "🚀 火箭弹（直射）" : (GESTURE_ZH[R.gest] ?? R.gest);
+  $("gestEn").textContent = rocket ? (R.gest === "Pointing_Up" ? "Pointing_Up + GunPose" : "GunPose(自定义)") : R.gest;
+  $("gestBar").style.width = ((R.score || 0) * 100).toFixed(0) + "%";
+  $("gestScore").textContent = R.score ? (R.score * 100).toFixed(0) + "%" : "--";
+  $("gestRaw").textContent = GESTURE_ZH[R.raw] ?? "--";
+
+  // 武器映射高亮（按防抖后的手势）
+  const effGest = rocket ? "Pointing_Up" : R.gest;
+  document.querySelectorAll(".wp").forEach(el => {
+    el.classList.toggle("active", el.dataset.g === effGest);
+  });
+
+  // 追踪导弹：比耶持续蓄力 3 秒自动发射；中途手势断掉/手丢失即重置
+  // （M1 用"手势保持"代替"目标保持被追踪"，M3 换成真实目标锁定）
+  const MISSILE_CHARGE_MS = 3000;
+  let lockText = "", lockPct = 0;
+  if (R.gest === "Victory" && now - (R.seenT || 0) < 300) {
+    if (R.chargeStart == null) R.chargeStart = now;
+    const held = now - R.chargeStart;
+    if (held >= MISSILE_CHARGE_MS) {
+      if (!R.firedAt) R.firedAt = now;
+      if (now - R.firedAt < 1200) {
+        lockPct = 100;
+        lockText = "💥 导弹已发射！";
+      } else {
+        R.chargeStart = now; R.firedAt = null;   // 保持姿势 → 自动装填下一发
+        lockText = "装填中…"; lockPct = 0;
+      }
+    } else {
+      lockPct = held / MISSILE_CHARGE_MS * 100;
+      lockText = "🎯 锁定中 " + (held / 1000).toFixed(1) + "s / 3.0s";
+    }
+  } else {
+    R.chargeStart = null; R.firedAt = null;
+  }
+  $("lockWrap").style.display = lockText ? "block" : "none";
+  if (lockText) {
+    $("lockFill").style.width = lockPct + "%";
+    $("lockLabel").textContent = lockText;
+  }
+
+  // 捏合开合度：拇指尖(4)与食指尖(8)距离，按手掌大小(腕0-中指根9)归一化
+  if (R.lm && now - (R.seenT || 0) < 300) {
+    const scale = Math.hypot(R.lm[0].x - R.lm[9].x, R.lm[0].y - R.lm[9].y) || 1;
+    const pd = Math.hypot(R.lm[4].x - R.lm[8].x, R.lm[4].y - R.lm[8].y) / scale;
+    $("pinchVal").textContent = pd.toFixed(2);
+  } else {
+    $("pinchVal").textContent = "--";
+  }
+
+  // 手数（当前帧实际识别数）
+  $("handCount").textContent = state.handCountNow ?? 0;
+}
+</script>
+</body>
+</html>
